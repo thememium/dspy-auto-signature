@@ -16,6 +16,7 @@ build-backend = "uv_build"
 
 [dependency-groups]
 dev = [
+  "boto3>=1.43.15",
   "deptry>=0.25.1",
   "isort>=8.0.1",
   "poethepoet>=0.46.0",
