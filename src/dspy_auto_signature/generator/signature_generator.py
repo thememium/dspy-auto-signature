@@ -122,9 +122,13 @@ class SignatureGenerator(dspy.Module):
 
         for f in refined_fields:
             field_type = FieldType(f.get("field_type", "input").lower())
+            name = f.get("name", "unnamed").strip()
+            description = f.get("description", "").strip()
+            if not description:
+                description = f"The {name} field"
             spec = FieldSpec(
-                name=f.get("name", "unnamed").strip(),
-                description=f.get("description", "").strip(),
+                name=name,
+                description=description,
                 suggested_type=f.get("type", "string").strip(),
                 field_type=field_type,
             )
