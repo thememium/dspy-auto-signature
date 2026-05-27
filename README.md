@@ -8,13 +8,18 @@ Generate production-ready `dspy.Signature` classes from any prompt material — 
 import dspy
 import dspy_auto_signature as das
 
-# Configure the LM used for signature generation
+# 1. Configure the meta-model for signature generation
+#    (One-time setup — use a strong model for best results)
 das.configure(lm=dspy.LM("openai/gpt-4o"))
 
-# Generate a signature from a raw prompt
+# 2. Generate a signature from a raw prompt
 sig = das.from_prompt("Summarize the following article into 3 bullet points")
 
-# Use it immediately with any DSPy predictor
+# 3. Configure the runtime model separately
+#    (Use a cheaper/faster model for repeated inference)
+dspy.configure(lm=dspy.LM("openai/gpt-4o-mini"))
+
+# 4. Use it immediately with any DSPy predictor
 summarizer = dspy.ChainOfThought(sig)
 result = summarizer(article="Long article text...")
 ```
@@ -86,10 +91,16 @@ Generate a `dspy.Signature` subclass from arbitrary prompt material.
 
 ### `configure(lm=None)`
 
-Set the language model used for signature generation. If not called, the package uses whatever LM is globally configured via `dspy.configure(lm=...)`.
+Set the language model used **only for signature generation** (the meta-program). This is completely independent from the LM you use at runtime with your generated signatures.
+
+If not called, the package will attempt to use whatever LM is globally configured via `dspy.configure(lm=...)`.
 
 ```python
+# Use a strong model for one-time signature generation
 das.configure(lm=dspy.LM("openai/gpt-4o"))
+
+# Later, use a different model for runtime inference
+dspy.configure(lm=dspy.LM("openai/gpt-4o-mini"))
 ```
 
 ## Architecture
@@ -126,7 +137,8 @@ src/dspy_auto_signature/
 import dspy
 import dspy_auto_signature as das
 
-# 1. Configure
+# 1. Configure the meta-model for signature generation
+#    (One-time — use a strong, slow model)
 das.configure(lm=dspy.LM("openai/gpt-4o"))
 
 # 2. Generate signature from a complex prompt
@@ -141,7 +153,11 @@ provide:
 # 3. Inspect what was generated
 print(sig)  # CodeReviewer(pr_description, diff -> summary, issues, risk_score)
 
-# 4. Use it
+# 4. Configure the runtime model separately
+#    (Repeated inference — use a cheaper/faster model)
+dspy.configure(lm=dspy.LM("openai/gpt-4o-mini"))
+
+# 5. Use it
 reviewer = dspy.ChainOfThought(sig)
 result = reviewer(
     pr_description="Add user authentication",
