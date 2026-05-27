@@ -23,6 +23,10 @@ def main() -> None:
     # 2. Generate a signature from a raw prompt.
     sig = das.from_prompt("Summarize the following article into 3 short bullet points")
 
+    with open("summary_signature.py", "w", encoding="utf-8") as f:
+        f.write(sig.to_source())
+    print("Saved signature to magic.py")
+
     # 3. Inspect what was generated.
     print(f"Generated signature: {sig}")
     print(f"Docstring: {sig.__doc__}")
@@ -34,7 +38,7 @@ def main() -> None:
     dspy.configure(lm=dspy.LM("openrouter/openai/gpt-oss-120b"))
 
     # 5. Use it immediately with any DSPy predictor.
-    summarizer = dspy.ChainOfThought(sig)
+    summarizer = dspy.ChainOfThought(sig.to_signature())
 
     article = (
         "Artificial intelligence has transformed industries ranging from "
