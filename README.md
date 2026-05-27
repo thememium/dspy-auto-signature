@@ -1,8 +1,74 @@
-# DSPy Auto-Signature
+<a name="readme-top"></a>
 
-Generate production-ready `dspy.Signature` classes from any prompt material — raw strings, Vercel AI SDK message arrays, or Anthropic XML prompts. No manual signature writing required.
+<div align="center">
+  <h3 align="center">AutoSignature</h3>
+
+  <p align="center">
+    Generate production-ready <code>dspy.Signature</code> classes from any prompt material.
+    <br />
+    <a href="#table-of-contents"><strong>Explore the Documentation »</strong></a>
+    <br />
+    <a href="https://github.com/thememium/dspy-auto-signature/issues">Report Bug</a>
+    <a href="https://github.com/thememium/dspy-auto-signature/issues">Request Feature</a>
+  </p>
+</div>
+
+<!-- TABLE OF CONTENTS -->
+
+<a name="table-of-contents"></a>
+
+<details>
+  <summary>Table of Contents</summary>
+  <ol>
+    <li><a href="#about">About</a></li>
+    <li><a href="#quick-start">Quick Start</a></li>
+    <li><a href="#usage">Usage</a></li>
+    <li><a href="#api">API</a></li>
+    <li><a href="#architecture">Architecture</a></li>
+    <li><a href="#contributing">Contributing</a></li>
+    <li><a href="#license">License</a></li>
+  </ol>
+</details>
+
+<!-- ABOUT -->
+
+<a name="about"></a>
+
+## About
+
+AutoSignature is a **meta-DSPy** program: a DSPy module that generates DSPy signatures. Instead of hand-writing prompts to extract structure, it uses DSPy signatures to generate DSPy signatures.
+
+- **Zero manual signature writing** — Pass any prompt material and get a real `dspy.Signature` subclass back
+- **Heterogeneous input support** — Raw strings, Vercel AI SDK message arrays, or Anthropic XML prompts
+- **Full class-based signatures** — Generated signatures have docstrings, typed `dspy.InputField` / `dspy.OutputField` fields, and descriptions
+- **Composable** — The meta-generator benefits from DSPy optimizers (BootstrapFewShot, MIPRO, etc.)
+- **Type safe** — Generated signatures are real Python classes with typed fields
+
+Requires **Python 3.10+** and **DSPy 3.1+**.
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+<!-- QUICK START -->
+
+<a name="quick-start"></a>
 
 ## Quick Start
+
+### Install
+
+Install AutoSignature with uv (recommended):
+
+```bash
+uv add dspy-auto-signature
+```
+
+Or with pip:
+
+```bash
+pip install dspy-auto-signature
+```
+
+### Basic Usage
 
 ```python
 import dspy
@@ -24,30 +90,13 @@ summarizer = dspy.ChainOfThought(sig)
 result = summarizer(article="Long article text...")
 ```
 
-## Installation
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
 
-```bash
-pip install dspy-auto-signature
-```
+<!-- USAGE -->
 
-Requires Python 3.10+ and DSPy 3.1+.
+<a name="usage"></a>
 
-## How It Works
-
-This is a **meta-DSPy** program: a DSPy module that generates DSPy signatures.
-
-```
-Raw Prompt Input
-    → Parser (normalises heterogeneous formats)
-    → SignatureGenerator (DSPy module)
-        1. Analyze: Extract task name and instruction
-        2. Extract Fields: Identify inputs and outputs
-        3. Refine: Polish names, types, and descriptions
-    → SignatureBuilder (constructs dspy.Signature subclass)
-    → type[dspy.Signature] (a real class, ready to use)
-```
-
-## Supported Input Formats
+## Usage
 
 ### Raw String
 
@@ -76,62 +125,7 @@ sig = das.from_prompt(
 )
 ```
 
-## Public API
-
-### `from_prompt(prompt, input_hints=None, output_hints=None)`
-
-Generate a `dspy.Signature` subclass from arbitrary prompt material.
-
-**Args:**
-- `prompt`: Raw string, Vercel AI SDK message array, or any supported format
-- `input_hints`: Optional `dict[str, str]` mapping field names to descriptions
-- `output_hints`: Optional `dict[str, str]` mapping field names to descriptions
-
-**Returns:** A fresh `dspy.Signature` subclass compatible with `dspy.Predict`, `dspy.ChainOfThought`, etc.
-
-### `configure(lm=None)`
-
-Set the language model used **only for signature generation** (the meta-program). This is completely independent from the LM you use at runtime with your generated signatures.
-
-If not called, the package will attempt to use whatever LM is globally configured via `dspy.configure(lm=...)`.
-
-```python
-# Use a strong model for one-time signature generation
-das.configure(lm=dspy.LM("openai/gpt-4o"))
-
-# Later, use a different model for runtime inference
-dspy.configure(lm=dspy.LM("openai/gpt-4o-mini"))
-```
-
-## Architecture
-
-```
-src/dspy_auto_signature/
-├── __init__.py              # Public API: from_prompt(), configure()
-├── core/
-│   ├── signature_builder.py # Builds dspy.Signature classes from specs
-│   └── config.py            # Package configuration (LM, defaults)
-├── generator/
-│   └── signature_generator.py  # The DSPy meta-module
-├── parser/
-│   ├── base.py              # Abstract prompt parser
-│   ├── string_parser.py     # Raw string / system prompt
-│   ├── vercel_parser.py     # Vercel AI SDK format
-│   └── __init__.py          # AutoParser orchestrator
-├── types/
-│   └── signature_spec.py    # Pydantic models for intermediate representation
-└── utils/
-    └── type_resolver.py     # Map "list of strings" → list[str], etc.
-```
-
-### Key Components
-
-1. **Parser Layer** (`parser/`): Accepts heterogeneous inputs and normalises them into `ParsedPrompt`
-2. **Signature Generator** (`generator/signature_generator.py`): A 3-step DSPy `Module` that analyses prompts and produces `SignatureSpec`
-3. **Signature Builder** (`core/signature_builder.py`): Constructs actual `dspy.Signature` subclasses using `dspy.signatures.make_signature`
-4. **Type Resolver** (`utils/type_resolver.py`): Maps natural language type descriptions to Python types
-
-## Example: Full Workflow
+### Full Workflow Example
 
 ```python
 import dspy
@@ -169,14 +163,120 @@ print(result.issues)
 print(result.risk_score)
 ```
 
-## Why Meta-DSPy?
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
 
-Instead of hand-writing prompts to extract structure, we use DSPy signatures to generate DSPy signatures. This means:
+<!-- API -->
 
-- **Composability**: The meta-generator benefits from DSPy optimizers (BootstrapFewShot, MIPRO, etc.)
-- **Type Safety**: Generated signatures are real Python classes with typed fields
-- **No Prompt Engineering**: The system prompt is the signature docstring; the rest is inferred
+<a name="api"></a>
+
+## API
+
+### `from_prompt(prompt, input_hints=None, output_hints=None)`
+
+Generate a `dspy.Signature` subclass from arbitrary prompt material.
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `prompt` | `str \| list[dict[str, str]] \| Any` | The prompt material. Can be a raw string, Vercel AI SDK message array, or any supported format |
+| `input_hints` | `dict[str, str] \| None` | Optional mapping of field-name → description for known inputs |
+| `output_hints` | `dict[str, str] \| None` | Optional mapping of field-name → description for known outputs |
+
+**Returns:** A fresh `dspy.Signature` subclass compatible with `dspy.Predict`, `dspy.ChainOfThought`, etc.
+
+### `configure(lm=None)`
+
+Set the language model used **only for signature generation** (the meta-program). This is completely independent from the LM you use at runtime with your generated signatures.
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `lm` | `dspy.LM \| None` | A `dspy.LM` instance, or `None` to use the global default |
+
+If not called, the package will attempt to use whatever LM is globally configured via `dspy.configure(lm=...)`.
+
+```python
+# Use a strong model for one-time signature generation
+das.configure(lm=dspy.LM("openai/gpt-4o"))
+
+# Later, use a different model for runtime inference
+dspy.configure(lm=dspy.LM("openai/gpt-4o-mini"))
+```
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+<!-- ARCHITECTURE -->
+
+<a name="architecture"></a>
+
+## Architecture
+
+```
+src/dspy_auto_signature/
+├── __init__.py              # Public API: from_prompt(), configure()
+├── core/
+│   ├── signature_builder.py # Builds dspy.Signature classes from specs
+│   └── config.py            # Package configuration (LM, defaults)
+├── generator/
+│   └── signature_generator.py  # The DSPy meta-module
+├── parser/
+│   ├── base.py              # Abstract prompt parser
+│   ├── string_parser.py     # Raw string / system prompt
+│   ├── vercel_parser.py     # Vercel AI SDK format
+│   └── __init__.py          # AutoParser orchestrator
+├── types/
+│   └── signature_spec.py    # Pydantic models for intermediate representation
+└── utils/
+    └── type_resolver.py     # Map "list of strings" → list[str], etc.
+```
+
+### Key Components
+
+1. **Parser Layer** (`parser/`): Accepts heterogeneous inputs and normalises them into `ParsedPrompt`
+2. **Signature Generator** (`generator/signature_generator.py`): A 3-step DSPy `Module` that analyses prompts and produces `SignatureSpec`
+3. **Signature Builder** (`core/signature_builder.py`): Constructs actual `dspy.Signature` subclasses using `dspy.signatures.make_signature`
+4. **Type Resolver** (`utils/type_resolver.py`): Maps natural language type descriptions to Python types
+
+### How It Works
+
+```
+Raw Prompt Input
+    → Parser (normalises heterogeneous formats)
+    → SignatureGenerator (DSPy module)
+        1. Analyze: Extract task name and instruction
+        2. Extract Fields: Identify inputs and outputs
+        3. Refine: Polish names, types, and descriptions
+    → SignatureBuilder (constructs dspy.Signature subclass)
+    → type[dspy.Signature] (a real class, ready to use)
+```
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+<!-- CONTRIBUTING -->
+
+<a name="contributing"></a>
+
+## Contributing
+
+Quick workflow:
+
+1. Fork and branch: `git checkout -b feature/name`
+2. Make changes
+3. Commit and push
+4. Open a Pull Request
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+<!-- LICENSE -->
+
+<a name="license"></a>
 
 ## License
 
-MIT
+MIT (as declared in `pyproject.toml`).
+
+---
+
+<div align="center">
+  <p>
+    <sub>Built by <a href="https://github.com/thememium">thememium</a></sub>
+  </p>
+</div>
