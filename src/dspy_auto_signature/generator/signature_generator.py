@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING
 
 import dspy
 
+from dspy_auto_signature.core.config import Config
 from dspy_auto_signature.types.signature_spec import FieldSpec, FieldType, SignatureSpec
 
 if TYPE_CHECKING:
@@ -69,6 +70,10 @@ class SignatureGenerator(dspy.Module):
     def forward(self, prompt: ParsedPrompt) -> SignatureSpec:
         """Generate a :class:`SignatureSpec` from a parsed prompt.
 
+        Uses the LM configured via :func:`~dspy_auto_signature.configure`
+        (or the global DSPy default) in an isolated context so that the
+        meta-program does not pollute the user's runtime DSPy settings.
+
         Args:
             prompt: A normalised :class:`ParsedPrompt`.
 
@@ -77,31 +82,33 @@ class SignatureGenerator(dspy.Module):
 
         """
         raw_text = prompt.instruction_text
+        lm = Config.get_lm()
 
-        # Step 1: Analyze the task
-        analysis = self.analyze(raw_prompt=raw_text)
-        task_name = analysis.task_name.strip()
-        task_instruction = analysis.task_instruction.strip()
+        with dspy.settings.context(lm=lm):
+            # Step 1: Analyze the task
+            analysis = self.analyze(raw_prompt=raw_text)
+            task_name = analysis.task_name.strip()
+            task_instruction = analysis.task_instruction.strip()
 
-        # Step 2: Extract fields
-        extraction = self.extract_fields(
-            task_instruction=task_instruction,
-            raw_prompt_context=raw_text,
-        )
+            # Step 2: Extract fields
+            extraction = self.extract_fields(
+                task_instruction=task_instruction,
+                raw_prompt_context=raw_text,
+            )
 
-        try:
-            fields = json.loads(extraction.fields_json)
-        except json.JSONDecodeError:
-            logger.warning("Failed to parse fields JSON, attempting fallback")
-            fields = self._fallback_field_extraction(extraction.fields_json)
+            try:
+                fields = json.loads(extraction.fields_json)
+            except json.JSONDecodeError:
+                logger.warning("Failed to parse fields JSON, attempting fallback")
+                fields = self._fallback_field_extraction(extraction.fields_json)
 
-        # Step 3: Refine
-        draft_fields_json = json.dumps(fields)
-        refined = self.refine(
-            draft_name=task_name,
-            draft_instruction=task_instruction,
-            draft_fields_json=draft_fields_json,
-        )
+            # Step 3: Refine
+            draft_fields_json = json.dumps(fields)
+            refined = self.refine(
+                draft_name=task_name,
+                draft_instruction=task_instruction,
+                draft_fields_json=draft_fields_json,
+            )
 
         try:
             refined_fields = json.loads(refined.refined_fields_json)
