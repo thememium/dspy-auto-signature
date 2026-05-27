@@ -1,0 +1,103 @@
+"""Tests for the parser layer."""
+
+from __future__ import annotations
+
+import pytest
+
+from dspy_auto_signature.parser import AutoParser
+from dspy_auto_signature.parser.base import PromptParser
+from dspy_auto_signature.parser.string_parser import StringParser
+from dspy_auto_signature.parser.vercel_parser import VercelParser
+from dspy_auto_signature.types.signature_spec import ParsedPrompt
+
+
+class TestStringParser:
+    def test_can_parse_string(self) -> None:
+        parser = StringParser()
+        assert parser.can_parse("hello") is True
+        assert parser.can_parse(123) is False
+
+    def test_simple_string(self) -> None:
+        parser = StringParser()
+        result = parser.parse("Summarize articles")
+        assert isinstance(result, ParsedPrompt)
+        assert result.instruction_text == "Summarize articles"
+        assert result.examples == []
+
+    def test_extracts_examples(self) -> None:
+        text = """
+        Summarize articles. Here are examples:
+        Input: Long article about AI
+        Output: AI is transforming technology
+        Input: Article about climate
+        Output: Climate change is accelerating
+        """
+        parser = StringParser()
+        result = parser.parse(text)
+        assert len(result.examples) == 2
+        assert result.examples[0]["input"] == "Long article about AI"
+        assert result.examples[0]["output"] == "AI is transforming technology"
+
+
+class TestVercelParser:
+    def test_can_parse_vercel_format(self) -> None:
+        parser = VercelParser()
+        assert parser.can_parse([{"role": "system", "content": "hi"}]) is True
+        assert parser.can_parse("not a list") is False
+        assert parser.can_parse([{"no_role": "x"}]) is False
+
+    def test_parse_system_and_user(self) -> None:
+        messages = [
+            {"role": "system", "content": "You are a summarizer."},
+            {"role": "user", "content": "Summarize: {article}"},
+        ]
+        parser = VercelParser()
+        result = parser.parse(messages)
+        assert "You are a summarizer." in result.instruction_text
+        assert "Summarize: {article}" in result.instruction_text
+
+    def test_parse_assistant_as_context(self) -> None:
+        messages = [
+            {"role": "system", "content": "You are helpful."},
+            {"role": "assistant", "content": "Here is the summary."},
+        ]
+        parser = VercelParser()
+        result = parser.parse(messages)
+        assert "You are helpful." in result.instruction_text
+        assert "Here is the summary." in result.instruction_text
+
+
+class TestAutoParser:
+    def setup_method(self) -> None:
+        self._original_parsers = list(AutoParser._parsers)
+
+    def teardown_method(self) -> None:
+        AutoParser._parsers = self._original_parsers
+
+    def test_auto_selects_string_parser(self) -> None:
+        result = AutoParser.parse("Just a string")
+        assert isinstance(result, ParsedPrompt)
+        assert result.instruction_text == "Just a string"
+
+    def test_auto_selects_vercel_parser(self) -> None:
+        result = AutoParser.parse([{"role": "system", "content": "test"}])
+        assert isinstance(result, ParsedPrompt)
+        assert "test" in result.instruction_text
+
+    def test_raises_on_unsupported(self) -> None:
+        with pytest.raises(ValueError, match="No parser available"):
+            AutoParser.parse(12345)  # type: ignore[arg-type]
+
+    def test_custom_parser_registration(self) -> None:
+        class IntParser(PromptParser):
+            def can_parse(self, raw: object) -> bool:
+                return isinstance(raw, int)
+
+            def parse(self, raw: object) -> ParsedPrompt:
+                return ParsedPrompt(
+                    instruction_text=str(raw), examples=[], raw_input=raw
+                )
+
+        AutoParser.register(IntParser, prepend=True)
+        result = AutoParser.parse(42)
+        assert result.instruction_text == "42"
