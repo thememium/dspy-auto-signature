@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, cast
 
 import dspy
 
@@ -83,7 +83,7 @@ def from_prompt(
 
     # 2. Run the meta-generator (DSPy module)
     generator = SignatureGenerator()
-    spec = generator.forward(parsed)
+    spec = cast(SignatureSpec, generator(parsed))
 
     # 3. Apply any user-supplied hints
     if input_hints:
