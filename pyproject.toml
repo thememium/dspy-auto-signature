@@ -3,14 +3,9 @@ name = "dspy-auto-signature"
 version = "0.1.0"
 description = "Generate DSPy Signatures from any prompt using a DSPy meta-program"
 readme = "README.md"
-authors = [
-    { name = "Edward Boswell", email = "thememium@gmail.com" }
-]
+authors = [{ name = "Edward Boswell", email = "thememium@gmail.com" }]
 requires-python = ">=3.12"
-dependencies = [
-    "dspy>=3.2.1",
-    "pydantic>=2.13.4",
-]
+dependencies = ["dspy>=3.2.1", "pydantic>=2.13.4"]
 
 [project.scripts]
 dspy-auto-signature = "dspy_auto_signature:main"
@@ -21,20 +16,20 @@ build-backend = "uv_build"
 
 [dependency-groups]
 dev = [
-    "deptry>=0.25.1",
-    "isort>=8.0.1",
-    "poethepoet>=0.46.0",
-    "pytest>=9.0.3",
-    "ruff>=0.15.14",
-    "ty>=0.0.39",
-    "usechange>=0.1.28",
+  "deptry>=0.25.1",
+  "isort>=8.0.1",
+  "poethepoet>=0.46.0",
+  "pytest>=9.0.3",
+  "ruff>=0.15.14",
+  "ty>=0.0.39",
+  "usechange>=0.1.28",
 ]
 
 [tool.deptry]
 known_first_party = ["dspy_auto_signature"]
 
 [tool.poe.tasks]
-dev = "uv run main.py"
+example = "uv run example.py"
 clean-full = "sh -c 'uv run isort . && uv run ruff check . --fix && uv run ruff format . && uv run deptry . && uv run ty check'"
 clean = "sh -c 'uv run isort . && uv run ruff format .'"
 test = "uv run pytest tests/ -v"
