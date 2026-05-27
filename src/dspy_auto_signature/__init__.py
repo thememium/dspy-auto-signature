@@ -8,7 +8,10 @@ from typing import Any, cast
 import dspy
 
 from dspy_auto_signature.core.config import Config
-from dspy_auto_signature.core.signature_builder import SignatureBuilder
+from dspy_auto_signature.core.signature_builder import (
+    GeneratedSignature,
+    SignatureBuilder,
+)
 from dspy_auto_signature.generator.signature_generator import SignatureGenerator
 from dspy_auto_signature.parser import AutoParser
 from dspy_auto_signature.types.signature_spec import SignatureSpec
@@ -17,6 +20,7 @@ __all__ = [
     "from_prompt",
     "configure",
     "SignatureSpec",
+    "GeneratedSignature",
 ]
 
 logger = logging.getLogger(__name__)
@@ -45,7 +49,7 @@ def from_prompt(
     *,
     input_hints: dict[str, str] | None = None,
     output_hints: dict[str, str] | None = None,
-) -> type[dspy.Signature]:
+) -> GeneratedSignature:
     """Generate a DSPy Signature class from an arbitrary prompt.
 
     Accepts raw strings, Vercel AI SDK message arrays, or any combination.
