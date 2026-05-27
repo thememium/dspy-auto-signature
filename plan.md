@@ -42,9 +42,7 @@ src/dspy_auto_signature/
 │   └── config.py               # Package configuration (LM, defaults)
 ├── generator/
 │   ├── __init__.py
-│   ├── signature_generator.py  # The DSPy module that analyzes prompts
-│   └── prompts/
-│       └── system_prompts.py   # Prompts for the meta-program
+│   └── signature_generator.py  # The DSPy module that analyzes prompts
 ├── parser/
 │   ├── __init__.py
 │   ├── base.py                 # Abstract prompt parser
@@ -162,7 +160,6 @@ summarizer = dspy.ChainOfThought(sig)
 2.  `utils/type_resolver.py` — Type mapping utilities
 3.  `core/signature_builder.py` — Build actual DSPy signatures
 4.  `parser/base.py`, `string_parser.py` — Parse raw strings
-5.  `generator/prompts/system_prompts.py` — Prompts for meta-analysis
-6.  `generator/signature_generator.py` — The DSPy module
-7.  `__init__.py` — Public API and configuration
+5.  `generator/signature_generator.py` — The DSPy module
+6.  `__init__.py` — Public API and configuration
 8.  Tests for each module
