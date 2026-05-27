@@ -35,6 +35,9 @@ class SignatureBuilder:
         Returns:
             A fresh ``dspy.Signature`` subclass.
 
+        Raises:
+            ValueError: If any field is missing a description or type.
+
         """
         fields: dict[
             str, tuple[type | types.UnionType | types.GenericAlias, FieldInfo]
@@ -70,8 +73,17 @@ class SignatureBuilder:
         field_factory: Callable[..., FieldInfo],
     ) -> tuple[type | types.UnionType | types.GenericAlias, FieldInfo]:
         """Create a (type, FieldInfo) tuple compatible with ``make_signature``."""
+        if not field_spec.description or not field_spec.description.strip():
+            raise ValueError(
+                f"Field '{field_spec.name}' is missing a description. "
+                "All fields must have a non-empty description."
+            )
+
         resolved_type = field_spec.resolved_type
-        kwargs: dict[str, object] = {"desc": field_spec.description}
+        kwargs: dict[str, object] = {
+            "desc": field_spec.description,
+            "description": field_spec.description,
+        }
         if field_spec.constraints:
             # Attach constraints as extra metadata; DSPy may expose them later.
             kwargs["json_schema_extra"] = {"constraints": field_spec.constraints}
