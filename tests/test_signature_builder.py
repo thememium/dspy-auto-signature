@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import cast
+
 import dspy
 import pytest
 from pydantic.fields import FieldInfo
@@ -41,7 +43,7 @@ class TestSignatureBuilder:
 
         Sig = SignatureBuilder.build(spec)
 
-        assert issubclass(Sig, dspy.Signature)
+        assert issubclass(cast(type, Sig), dspy.Signature)
         assert Sig.__name__ == "TestSummarizer"
         assert Sig.instructions == "Summarize text into bullet points."
         assert "text" in Sig.input_fields
@@ -282,3 +284,61 @@ class TestSignatureBuilder:
             Sig.output_fields["key_points"].description
             == "A list of key points mentioned in the review"
         )
+
+    def test_to_source_generates_valid_python(self) -> None:
+        spec = SignatureSpec(
+            name="SourceTest",
+            instructions="Test the to_source method.",
+            inputs=[
+                FieldSpec(
+                    name="text",
+                    description="Input text",
+                    suggested_type="string",
+                    field_type=FieldType.INPUT,
+                ),
+            ],
+            outputs=[
+                FieldSpec(
+                    name="result",
+                    description="The result",
+                    suggested_type="list of strings",
+                    field_type=FieldType.OUTPUT,
+                ),
+            ],
+        )
+
+        Sig = SignatureBuilder.build(spec)
+        source = Sig.to_source()
+
+        assert "class SourceTest(dspy.Signature):" in source
+        assert 'text: str = dspy.InputField(desc="Input text")' in source
+        assert 'result: list[str] = dspy.OutputField(desc="The result")' in source
+        assert "import dspy" in source
+
+        compile(source, "<generated>", "exec")
+
+    def test_signature_builder_to_source_classmethod(self) -> None:
+        spec = SignatureSpec(
+            name="ClassMethodTest",
+            instructions="Test the classmethod.",
+            inputs=[
+                FieldSpec(
+                    name="query",
+                    description="Search query",
+                    field_type=FieldType.INPUT,
+                ),
+            ],
+            outputs=[
+                FieldSpec(
+                    name="answer",
+                    description="The answer",
+                    field_type=FieldType.OUTPUT,
+                ),
+            ],
+        )
+
+        source = SignatureBuilder.to_source(spec)
+
+        assert "class ClassMethodTest(dspy.Signature):" in source
+        assert 'query: str = dspy.InputField(desc="Search query")' in source
+        assert 'answer: str = dspy.OutputField(desc="The answer")' in source
