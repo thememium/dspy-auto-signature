@@ -76,18 +76,39 @@ import dspy_auto_signature as das
 
 # 1. Configure the meta-model for signature generation
 #    (One-time setup — use a strong model for best results)
-das.configure(lm=dspy.LM("openai/gpt-4o"))
+das.configure(lm=dspy.LM("openrouter/openai/gpt-oss-120b"))
 
 # 2. Generate a signature from a raw prompt
-sig = das.from_prompt("Summarize the following article into 3 bullet points")
+sig = das.from_prompt("Summarize the following article into 3 short bullet points")
 
-# 3. Configure the runtime model separately
+# 3. Inspect what was generated
+print(f"Generated signature: {sig}")
+print(f"Docstring: {sig.__doc__}")
+print(f"Inputs:  {list(sig.input_fields.keys())}")
+print(f"Outputs: {list(sig.output_fields.keys())}")
+
+# 4. Save the generated signature to a file
+with open("summary_signature.py", "w", encoding="utf-8") as f:
+    f.write(sig.to_source())
+
+# 5. Configure the runtime model separately
 #    (Use a cheaper/faster model for repeated inference)
-dspy.configure(lm=dspy.LM("openai/gpt-4o-mini"))
+dspy.configure(lm=dspy.LM("openrouter/openai/gpt-oss-120b"))
 
-# 4. Use it immediately with any DSPy predictor
-summarizer = dspy.ChainOfThought(sig)
-result = summarizer(article="Long article text...")
+# 6. Use it immediately with any DSPy predictor
+summarizer = dspy.ChainOfThought(sig.to_signature())
+
+article = (
+    "Artificial intelligence has transformed industries ranging from "
+    "healthcare to finance. Machine learning models can now diagnose "
+    "diseases, predict market trends, and automate customer service. "
+    "However, ethical concerns around bias, privacy, and job displacement "
+    "remain significant challenges that researchers and policymakers "
+    "continue to address."
+)
+
+result = summarizer(article=article)
+print(result)
 ```
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
@@ -133,7 +154,7 @@ import dspy_auto_signature as das
 
 # 1. Configure the meta-model for signature generation
 #    (One-time — use a strong, slow model)
-das.configure(lm=dspy.LM("openai/gpt-4o"))
+das.configure(lm=dspy.LM("openrouter/openai/gpt-oss-120b"))
 
 # 2. Generate signature from a complex prompt
 sig = das.from_prompt("""
@@ -145,14 +166,17 @@ provide:
 """)
 
 # 3. Inspect what was generated
-print(sig)  # CodeReviewer(pr_description, diff -> summary, issues, risk_score)
+print(f"Generated signature: {sig}")
+print(f"Docstring: {sig.__doc__}")
+print(f"Inputs:  {list(sig.input_fields.keys())}")
+print(f"Outputs: {list(sig.output_fields.keys())}")
 
 # 4. Configure the runtime model separately
 #    (Repeated inference — use a cheaper/faster model)
-dspy.configure(lm=dspy.LM("openai/gpt-4o-mini"))
+dspy.configure(lm=dspy.LM("openrouter/openai/gpt-oss-120b"))
 
 # 5. Use it
-reviewer = dspy.ChainOfThought(sig)
+reviewer = dspy.ChainOfThought(sig.to_signature())
 result = reviewer(
     pr_description="Add user authentication",
     diff="...diff text..."
