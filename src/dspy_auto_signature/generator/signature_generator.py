@@ -31,8 +31,7 @@ class AnalyzePrompt(dspy.Signature):
 class ExtractFields(dspy.Signature):
     """Extract input and output fields for an AI task."""
 
-    task_instruction: str = dspy.InputField(desc="The core task instruction")
-    raw_prompt_context: str = dspy.InputField(desc="The original prompt for context")
+    raw_prompt: str = dspy.InputField(desc="The raw prompt text to analyze")
     fields_json: str = dspy.OutputField(
         desc="A JSON array of field objects. Each object has: name (snake_case), description (string), type (string like 'string' or 'list of strings'), field_type ('input' or 'output')",
     )
@@ -64,8 +63,9 @@ class SignatureGenerator(dspy.Module):
     def __init__(self) -> None:
         super().__init__()
         self.analyze = dspy.ChainOfThought(AnalyzePrompt)
-        self.extract_fields = dspy.ChainOfThought(ExtractFields)
-        self.refine = dspy.ChainOfThought(RefineSignature)
+        self.extract_fields = dspy.Predict(ExtractFields)
+        self.refine = dspy.Predict(RefineSignature)
+        self.parallel = dspy.Parallel(num_threads=2)
 
     def forward(self, prompt: ParsedPrompt) -> SignatureSpec:
         """Generate a :class:`SignatureSpec` from a parsed prompt.
@@ -85,16 +85,20 @@ class SignatureGenerator(dspy.Module):
         lm = Config.get_lm()
 
         with dspy.settings.context(lm=lm):
-            # Step 1: Analyze the task
-            analysis = self.analyze(raw_prompt=raw_text)
+            # Step 1 & 2: Analyze and Extract Fields in parallel
+            # Both operate on raw_prompt, so they can run concurrently
+            results = self.parallel(
+                [
+                    (self.analyze, {"raw_prompt": raw_text}),
+                    (self.extract_fields, {"raw_prompt": raw_text}),
+                ]
+            )
+
+            analysis = results[0]
+            extraction = results[1]
+
             task_name = analysis.task_name.strip()
             task_instruction = analysis.task_instruction.strip()
-
-            # Step 2: Extract fields
-            extraction = self.extract_fields(
-                task_instruction=task_instruction,
-                raw_prompt_context=raw_text,
-            )
 
             try:
                 fields = json.loads(extraction.fields_json)
