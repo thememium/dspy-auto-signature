@@ -18,6 +18,7 @@ from dspy_auto_signature.types.signature_spec import SignatureSpec
 
 __all__ = [
     "from_prompt",
+    "from_dataset",
     "configure",
     "SignatureSpec",
     "GeneratedSignature",
@@ -26,22 +27,34 @@ __all__ = [
 logger = logging.getLogger(__name__)
 
 
-def configure(lm: dspy.LM | None = None) -> None:
+def configure(
+    lm: dspy.LM | None = None,
+    dataset_lm: dspy.LM | None = None,
+    sub_lm: dspy.LM | None = None,
+) -> None:
     """Configure the language model used for signature generation.
 
     If not called, the package will use whatever LM is globally configured
     via ``dspy.configure(lm=...)``.
 
     Args:
-        lm: A ``dspy.LM`` instance, or ``None`` to use the global default.
+        lm: A ``dspy.LM`` instance used by the fast path (``from_prompt``)
+            and as the fallback for ``dataset_lm`` and ``sub_lm``.
+        dataset_lm: The outer LM used by the slow path (``from_dataset``)
+            RLM. Falls back to ``lm`` if unset.
+        sub_lm: The cheap inner LM used by RLM for sub-queries. Falls back
+            to ``lm`` if unset.
 
     Example:
         >>> import dspy_auto_signature as das
         >>> import dspy
-        >>> das.configure(lm=dspy.LM("openai/gpt-4o"))
+        >>> das.configure(
+        ...     lm=dspy.LM("openai/gpt-4o"),
+        ...     sub_lm=dspy.LM("openai/gpt-4o-mini"),
+        ... )
 
     """
-    Config.configure(lm=lm)
+    Config.configure(lm=lm, dataset_lm=dataset_lm, sub_lm=sub_lm)
 
 
 def from_prompt(
@@ -52,9 +65,11 @@ def from_prompt(
 ) -> GeneratedSignature:
     """Generate a DSPy Signature class from an arbitrary prompt.
 
-    Accepts raw strings, Vercel AI SDK message arrays, or any combination.
-    Uses a DSPy meta-program internally to analyse the prompt and infer
-    fields, types, and instructions.
+    The **fast path**. Accepts raw strings, Vercel AI SDK message arrays, or
+    any combination. Uses a DSPy meta-program internally to analyse the
+    prompt and infer fields, types, and instructions.
+
+    For data-grounded signatures from tabular inputs, use :func:`from_dataset`.
 
     Args:
         prompt: The prompt material. Can be:
@@ -100,6 +115,111 @@ def from_prompt(
 
     logger.info(
         "Generated signature '%s' (%d inputs, %d outputs)",
+        spec.name,
+        len(spec.inputs),
+        len(spec.outputs),
+    )
+
+    return sig_class
+
+
+def from_dataset(
+    data: Any,
+    task_hint: str | None = None,
+    *,
+    input_hints: dict[str, str] | None = None,
+    output_hints: dict[str, str] | None = None,
+) -> GeneratedSignature:
+    """Generate a DSPy Signature class from a tabular dataset.
+
+    The **slow path**. Profiles the dataset's columns (dtypes, null rates,
+    cardinality, sample values, dtype-specific stats) and uses
+    :class:`dspy.RLM` (Recursive Language Model) to iteratively analyse the
+    data and propose a thoughtful signature.
+
+    Requires **Deno** to be installed (RLM uses a Deno-sandboxed Pyodide
+    REPL). See the README for install instructions.
+
+    Args:
+        data: The dataset. Accepts ``list[dict]``, ``pandas.DataFrame``,
+            ``polars.DataFrame`` / ``polars.LazyFrame``, ``list[dspy.Example]``,
+            a single ``dspy.Example``, or any object with ``.to_dicts()`` /
+            ``.to_pandas()`` / ``.to_dict()`` methods.
+        task_hint: Optional natural-language description of the task to
+            bias the RLM.
+        input_hints: Optional mapping of field-name → description for known inputs.
+        output_hints: Optional mapping of field-name → description for known outputs.
+
+    Returns:
+        A fresh ``dspy.Signature`` subclass ready for use in ``dspy.Predict``,
+        ``dspy.ChainOfThought``, etc.
+
+    Raises:
+        RuntimeError: If no language model is configured.
+        TypeError: If *data* cannot be converted to tabular records.
+
+    Example:
+        >>> import pandas as pd
+        >>> import dspy
+        >>> import dspy_auto_signature as das
+        >>>
+        >>> das.configure(
+        ...     lm=dspy.LM("openai/gpt-4o"),
+        ...     sub_lm=dspy.LM("openai/gpt-4o-mini"),
+        ... )
+        >>>
+        >>> df = pd.DataFrame({
+        ...     "message": ["Server is on fire", "Please clean conf room B"],
+        ...     "urgency": ["high", "low"],
+        ...     "sentiment": ["negative", "neutral"],
+        ... })
+        >>> sig = das.from_dataset(df, task_hint="Classify support tickets")
+
+    """
+    logger.debug("from_dataset called with input type: %s", type(data).__name__)
+
+    # Lazy imports to keep the fast path lightweight when only from_prompt is used.
+    from dspy_auto_signature.generator.rlm_signature_generator import (
+        RLMSignatureGenerator,
+    )
+    from dspy_auto_signature.parser import DataFrameParser
+    from dspy_auto_signature.types.signature_spec import ParsedPrompt
+
+    # 1. Parse the dataset into a ParsedPrompt with column profile in instruction_text
+    if not DataFrameParser().can_parse(data):
+        raise TypeError(
+            f"from_dataset() cannot handle input of type {type(data).__name__}. "
+            "Expected: list[dict], pandas DataFrame, polars DataFrame/LazyFrame, "
+            "list[dspy.Example], or any object with .to_dicts()/.to_pandas()/.to_dict()."
+        )
+    parsed = DataFrameParser().parse(data)
+
+    # 2. Carry the task_hint through (the RLM uses it to bias the spec)
+    if task_hint:
+        parsed = ParsedPrompt(
+            instruction_text=f"{parsed.instruction_text}\n\nTask: {task_hint}",
+            examples=parsed.examples,
+            raw_input=parsed.raw_input,
+        )
+
+    # 3. Run the RLM meta-generator
+    lm = Config.get_dataset_lm()
+    sub_lm = Config.get_sub_lm()
+    generator = RLMSignatureGenerator(sub_lm=sub_lm)
+    with dspy.settings.context(lm=lm):
+        spec = cast(SignatureSpec, generator(parsed))
+
+    # 4. Apply any user-supplied hints
+    if input_hints:
+        spec = _apply_hints(spec, input_hints, is_input=True)
+    if output_hints:
+        spec = _apply_hints(spec, output_hints, is_input=False)
+
+    # 5. Build the actual DSPy Signature class
+    sig_class = SignatureBuilder.build(spec)
+
+    logger.info(
+        "Generated signature '%s' (%d inputs, %d outputs) from dataset",
         spec.name,
         len(spec.inputs),
         len(spec.outputs),
