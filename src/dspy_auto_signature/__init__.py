@@ -178,14 +178,13 @@ def from_dataset(
     """
     logger.debug("from_dataset called with input type: %s", type(data).__name__)
 
-    # Lazy imports to keep the fast path lightweight when only from_prompt is used.
+    # Lazy imports: keep the fast path lightweight when only from_prompt is used.
     from dspy_auto_signature.generator.rlm_signature_generator import (
         RLMSignatureGenerator,
     )
     from dspy_auto_signature.parser import DataFrameParser
     from dspy_auto_signature.types.signature_spec import ParsedPrompt
 
-    # 1. Parse the dataset into a ParsedPrompt with column profile in instruction_text
     if not DataFrameParser().can_parse(data):
         raise TypeError(
             f"from_dataset() cannot handle input of type {type(data).__name__}. "
@@ -194,7 +193,6 @@ def from_dataset(
         )
     parsed = DataFrameParser().parse(data)
 
-    # 2. Carry the task_hint through (the RLM uses it to bias the spec)
     if task_hint:
         parsed = ParsedPrompt(
             instruction_text=f"{parsed.instruction_text}\n\nTask: {task_hint}",
@@ -202,20 +200,17 @@ def from_dataset(
             raw_input=parsed.raw_input,
         )
 
-    # 3. Run the RLM meta-generator
     lm = Config.get_dataset_lm()
     sub_lm = Config.get_sub_lm()
     generator = RLMSignatureGenerator(sub_lm=sub_lm)
     with dspy.settings.context(lm=lm):
         spec = cast(SignatureSpec, generator(parsed))
 
-    # 4. Apply any user-supplied hints
     if input_hints:
         spec = _apply_hints(spec, input_hints, is_input=True)
     if output_hints:
         spec = _apply_hints(spec, output_hints, is_input=False)
 
-    # 5. Build the actual DSPy Signature class
     sig_class = SignatureBuilder.build(spec)
 
     logger.info(
