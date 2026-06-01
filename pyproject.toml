@@ -5,7 +5,11 @@ description = "Generate DSPy Signatures from any prompt using a DSPy meta-progra
 readme = "README.md"
 authors = [{ name = "Edward Boswell", email = "thememium@gmail.com" }]
 requires-python = ">=3.12"
-dependencies = ["dspy>=3.2.1", "pydantic>=2.13.4"]
+dependencies = [
+    "dspy>=3.2.1",
+    "pandas>=3.0.3",
+    "pydantic>=2.13.4",
+]
 
 [project.scripts]
 dspy-auto-signature = "dspy_auto_signature:main"
