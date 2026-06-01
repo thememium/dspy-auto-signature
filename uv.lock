@@ -403,8 +403,15 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "dspy" },
-    { name = "pandas" },
     { name = "pydantic" },
+]
+
+[package.optional-dependencies]
+all = [
+    { name = "pandas" },
+]
+dataset = [
+    { name = "pandas" },
 ]
 
 [package.dev-dependencies]
@@ -412,6 +419,7 @@ dev = [
     { name = "boto3" },
     { name = "deptry" },
     { name = "isort" },
+    { name = "pandas" },
     { name = "poethepoet" },
     { name = "pytest" },
     { name = "ruff" },
@@ -422,15 +430,18 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "dspy", specifier = ">=3.2.1" },
-    { name = "pandas", specifier = ">=3.0.3" },
+    { name = "pandas", marker = "extra == 'all'", specifier = ">=2.0" },
+    { name = "pandas", marker = "extra == 'dataset'", specifier = ">=2.0" },
     { name = "pydantic", specifier = ">=2.13.4" },
 ]
+provides-extras = ["dataset", "all"]
 
 [package.metadata.requires-dev]
 dev = [
     { name = "boto3", specifier = ">=1.43.15" },
     { name = "deptry", specifier = ">=0.25.1" },
     { name = "isort", specifier = ">=8.0.1" },
+    { name = "pandas", specifier = ">=2.0" },
     { name = "poethepoet", specifier = ">=0.46.0" },
     { name = "pytest", specifier = ">=9.0.3" },
     { name = "ruff", specifier = ">=0.15.14" },

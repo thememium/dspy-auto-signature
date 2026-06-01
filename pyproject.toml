@@ -5,11 +5,11 @@ description = "Generate DSPy Signatures from any prompt using a DSPy meta-progra
 readme = "README.md"
 authors = [{ name = "Edward Boswell", email = "thememium@gmail.com" }]
 requires-python = ">=3.12"
-dependencies = [
-    "dspy>=3.2.1",
-    "pandas>=3.0.3",
-    "pydantic>=2.13.4",
-]
+dependencies = ["dspy>=3.2.1", "pydantic>=2.13.4"]
+
+[project.optional-dependencies]
+dataset = ["pandas>=2.0"]
+all = ["pandas>=2.0"]
 
 [project.scripts]
 dspy-auto-signature = "dspy_auto_signature:main"
@@ -28,6 +28,7 @@ dev = [
   "ruff>=0.15.14",
   "ty>=0.0.39",
   "usechange>=0.1.28",
+  "pandas>=2.0",
 ]
 
 [tool.deptry]
@@ -35,6 +36,7 @@ known_first_party = ["dspy_auto_signature"]
 
 [tool.poe.tasks]
 example = "uv run example.py"
+example-dataset = "uv run example_dataset.py"
 clean-full = "sh -c 'uv run isort . && uv run ruff check . --fix && uv run ruff format . && uv run deptry . && uv run ty check'"
 clean = "sh -c 'uv run isort . && uv run ruff format .'"
 test = "uv run pytest tests/ -v"
