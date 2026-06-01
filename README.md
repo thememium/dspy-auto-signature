@@ -23,6 +23,7 @@
     <li><a href="#about">About</a></li>
     <li><a href="#quick-start">Quick Start</a></li>
     <li><a href="#usage">Usage</a></li>
+    <li><a href="#dataset-input">Dataset Input (Slow Path)</a></li>
     <li><a href="#api">API</a></li>
     <li><a href="#architecture">Architecture</a></li>
     <li><a href="#contributing">Contributing</a></li>
@@ -189,6 +190,88 @@ print(result.risk_score)
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
+<!-- DATASET INPUT -->
+
+<a name="dataset-input"></a>
+
+## Dataset Input (Slow Path)
+
+For more thoughtful, data-grounded signatures, pass a dataset directly. AutoSignature will profile your columns (dtypes, null rates, cardinality, sample values, distributions) and use **DSPy RLM** (Recursive Language Model) to iteratively analyze the data and produce a robust signature.
+
+### Why use the slow path?
+
+The fast path reads your prompt text and infers field shapes from the description alone. The slow path **looks at your actual data**, so:
+
+- Field names come from your real column names
+- Field descriptions reference your real value distributions (e.g. "One of: high, medium, low")
+- Input vs. output direction is inferred from cardinality and data shape
+- Type hints are grounded in observed dtypes
+
+### Prerequisites
+
+The slow path uses `dspy.RLM`, which requires **Deno** (sandboxed Python REPL runtime):
+
+```bash
+brew install deno   # macOS
+# or see https://deno.land for Linux/Windows
+```
+
+### From a pandas DataFrame
+
+```python
+import dspy
+import pandas as pd
+import dspy_auto_signature as das
+
+das.configure(
+    lm=dspy.LM("openai/gpt-4o"),         # meta-LM for analysis
+    dataset_lm=dspy.LM("openai/gpt-4o"),  # RLM outer LM (defaults to lm)
+    sub_lm=dspy.LM("openai/gpt-4o-mini"), # RLM inner LM (cheap)
+)
+
+df = pd.read_csv("tickets.csv")
+sig = das.from_dataset(df, task_hint="Classify support tickets by urgency and sentiment")
+```
+
+### From a list of dicts
+
+```python
+rows = [
+    {"message": "Server is on fire", "urgency": "high", "sentiment": "negative"},
+    {"message": "Please clean conf room B", "urgency": "low", "sentiment": "neutral"},
+    {"message": "Thanks for the quick fix!", "urgency": "low", "sentiment": "positive"},
+]
+sig = das.from_dataset(rows, task_hint="Classify support tickets")
+```
+
+### From a list of `dspy.Example`
+
+```python
+import dspy
+
+examples = [
+    dspy.Example(message="Server is on fire", urgency="high", sentiment="negative").with_inputs("message"),
+    dspy.Example(message="Please clean conf room B", urgency="low", sentiment="neutral").with_inputs("message"),
+]
+sig = das.from_dataset(examples)
+```
+
+### Supported input types
+
+`from_dataset` accepts (duck-typed, no hard imports required):
+
+- `list[dict]`
+- `pandas.DataFrame`
+- `polars.DataFrame` / `polars.LazyFrame`
+- `list[dspy.Example]`
+- Any object with `.to_dicts()`, `.to_pandas()`, or `.to_dict()` methods
+
+### Performance & cost
+
+The slow path uses `dspy.RLM` with `max_iterations=20` and `max_llm_calls=50` by default. A cheap `sub_lm` (e.g. `gpt-4o-mini`) handles inner refinement passes. Expect a few seconds to a minute per signature, depending on dataset size and LM latency.
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
 <!-- API -->
 
 <a name="api"></a>
@@ -207,19 +290,40 @@ Generate a `dspy.Signature` subclass from arbitrary prompt material.
 
 **Returns:** A fresh `dspy.Signature` subclass compatible with `dspy.Predict`, `dspy.ChainOfThought`, etc.
 
-### `configure(lm=None)`
+### `from_dataset(data, task_hint=None, *, input_hints=None, output_hints=None)`
 
-Set the language model used **only for signature generation** (the meta-program). This is completely independent from the LM you use at runtime with your generated signatures.
+Generate a `dspy.Signature` subclass from a dataset by profiling its columns and using DSPy RLM to iteratively analyze the data.
 
 | Parameter | Type | Description |
 | --- | --- | --- |
-| `lm` | `dspy.LM \| None` | A `dspy.LM` instance, or `None` to use the global default |
+| `data` | `DataFrame \| list[dict] \| list[dspy.Example] \| Any` | The dataset. Accepts pandas/polars DataFrames, lists of dicts, lists of `dspy.Example`, or any object with `.to_dicts()`/`.to_pandas()`/`.to_dict()` |
+| `task_hint` | `str \| None` | Optional natural-language description of the task to bias the RLM |
+| `input_hints` | `dict[str, str] \| None` | Optional mapping of field-name → description for known inputs |
+| `output_hints` | `dict[str, str] \| None` | Optional mapping of field-name → description for known outputs |
 
-If not called, the package will attempt to use whatever LM is globally configured via `dspy.configure(lm=...)`.
+**Returns:** A fresh `dspy.Signature` subclass compatible with `dspy.Predict`, `dspy.ChainOfThought`, etc.
+
+See the [Dataset Input](#dataset-input) section for prerequisites and detailed usage.
+
+### `configure(lm=None, dataset_lm=None, sub_lm=None)`
+
+Set the language models used for signature generation.
+
+| Parameter | Type | Description |
+| --- | --- | --- |
+| `lm` | `dspy.LM \| None` | The meta-LM used for the fast path (`from_prompt`). Falls back to `dspy.settings.lm` if unset |
+| `dataset_lm` | `dspy.LM \| None` | The RLM outer LM used for the slow path (`from_dataset`). Falls back to `lm` if unset |
+| `sub_lm` | `dspy.LM \| None` | The cheap inner LM used by RLM for sub-queries. Falls back to `lm` if unset |
+
+The fast-path `lm` and slow-path `dataset_lm` are completely independent from the runtime LM you use with your generated signatures.
 
 ```python
 # Use a strong model for one-time signature generation
-das.configure(lm=dspy.LM("openai/gpt-4o"))
+das.configure(
+    lm=dspy.LM("openai/gpt-4o"),
+    dataset_lm=dspy.LM("openai/gpt-4o"),
+    sub_lm=dspy.LM("openai/gpt-4o-mini"),
+)
 
 # Later, use a different model for runtime inference
 dspy.configure(lm=dspy.LM("openai/gpt-4o-mini"))
