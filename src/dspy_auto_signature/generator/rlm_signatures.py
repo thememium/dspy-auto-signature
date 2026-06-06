@@ -128,8 +128,15 @@ class GenerateSDKSignature(dspy.Signature):
 
     ## Forbidden fields
 
-    NEVER generate these field names: ``role``, ``content``, ``parts``, ``messages``,
-    ``input``, ``output``, ``text``, ``data``, ``result``.
+    NEVER generate these field names — they are SDK structural metadata, not semantic
+    fields derived from message content:
+
+    - Structural keys: ``role``, ``content``, ``parts``, ``messages``
+    - Role values: ``system``, ``developer``, ``user``, ``assistant``, ``model``, ``tool``
+    - Generic placeholders: ``input``, ``output``, ``text``, ``data``, ``result``
+
+    Field names MUST describe the semantic content (e.g., ``article``, ``summary``,
+    ``classification``), never the SDK envelope that carried the content.
 
     ## Required analysis
 
