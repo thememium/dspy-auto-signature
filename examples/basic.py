@@ -36,9 +36,9 @@ def main() -> None:
     )
 
     # 3. Save the generated signature to a file.
-    with open("output/example_prompt_signature.py", "w", encoding="utf-8") as f:
+    with open("output/example_basic_signature.py", "w", encoding="utf-8") as f:
         f.write(sig.to_source())
-    print("Saved signature to output/ticket_signature.py")
+    print("Saved signature to output/example_basic_signature.py")
 
     # 4. Inspect what was generated.
     print(f"\nGenerated signature: {sig.__name__}")
