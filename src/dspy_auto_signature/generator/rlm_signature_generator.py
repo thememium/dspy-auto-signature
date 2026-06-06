@@ -75,22 +75,28 @@ class RLMSignatureGenerator(dspy.Module):
                 "sample_rows_json": "[]",
             }
 
-        from dspy_auto_signature.data.profiler import profile_columns
-        from dspy_auto_signature.data.to_records import to_records
+        profile = prompt.data_profile
+        rows = prompt.sample_rows
+        if profile is None:
+            from dspy_auto_signature.data.profiler import profile_columns
+            from dspy_auto_signature.data.to_records import to_records
 
-        rows = to_records(prompt.raw_input)
-        profile = profile_columns(rows)
+            all_rows = to_records(prompt.raw_input)
+            profile = profile_columns(all_rows)
+            rows = all_rows[:5]
         return {
             "source_kind": "dataset",
             "task_context": prompt.instruction_text,
             "examples_json": json.dumps(prompt.examples, indent=2, default=str),
             "data_profile_json": json.dumps(profile, indent=2, default=str),
-            "sample_rows_json": json.dumps(rows[:5], indent=2, default=str),
+            "sample_rows_json": json.dumps(rows, indent=2, default=str),
         }
 
     @staticmethod
     def _is_dataset(prompt: ParsedPrompt) -> bool:
         """Return whether the parsed source contains tabular data."""
+        if prompt.source_kind == "dataset":
+            return True
         raw = prompt.raw_input
         if raw is None:
             return False
