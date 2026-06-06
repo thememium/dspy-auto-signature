@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import types
 from enum import Enum
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -68,6 +68,15 @@ class ParsedPrompt(BaseModel):
         default_factory=list, description="Few-shot examples"
     )
     raw_input: Any = Field(default=None, description="Original input for provenance")
+    source_kind: Literal["prompt", "dataset"] = Field(
+        default="prompt", description="Normalized source category"
+    )
+    data_profile: dict[str, Any] | None = Field(
+        default=None, description="Precomputed profile for dataset sources"
+    )
+    sample_rows: list[dict[str, Any]] = Field(
+        default_factory=list, description="Representative rows for dataset sources"
+    )
 
 
 class SignatureSpec(BaseModel):
