@@ -60,7 +60,9 @@ def from_dataframe_example() -> None:
     print(f"Inputs:    {list(sig.input_fields.keys())}")
     print(f"Outputs:   {list(sig.output_fields.keys())}")
 
-    with open("output/example_dataset_signature.py", "w", encoding="utf-8") as f:
+    with open(
+        "examples/output/example_dataset_signature.py", "w", encoding="utf-8"
+    ) as f:
         f.write(sig.to_source())
 
 
@@ -97,7 +99,7 @@ def from_list_example() -> None:
     print(f"Inputs:    {list(sig.input_fields.keys())}")
     print(f"Outputs:   {list(sig.output_fields.keys())}")
 
-    with open("output/example_list_signature.py", "w", encoding="utf-8") as f:
+    with open("examples/output/example_list_signature.py", "w", encoding="utf-8") as f:
         f.write(sig.to_source())
 
 

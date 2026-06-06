@@ -44,8 +44,11 @@ def main() -> None:
     ]
     sig_openai = das.generate(openai_messages)
 
-    with open("output/example_openai_signature.py", "w", encoding="utf-8") as f:
+    with open(
+        "examples/output/example_openai_signature.py", "w", encoding="utf-8"
+    ) as f:
         f.write(sig_openai.to_source())
+
     print("Saved OpenAI signature to output/example_openai_signature.py")
     print(f"  Inputs:  {list(sig_openai.input_fields.keys())}")
     print(f"  Outputs: {list(sig_openai.output_fields.keys())}")
@@ -60,8 +63,11 @@ def main() -> None:
     ]
     sig_anthropic = das.generate(anthropic_messages)
 
-    with open("output/example_anthropic_signature.py", "w", encoding="utf-8") as f:
+    with open(
+        "examples/output/example_anthropic_signature.py", "w", encoding="utf-8"
+    ) as f:
         f.write(sig_anthropic.to_source())
+
     print("\nSaved Anthropic signature to output/example_anthropic_signature.py")
     print(f"  Inputs:  {list(sig_anthropic.input_fields.keys())}")
     print(f"  Outputs: {list(sig_anthropic.output_fields.keys())}")
@@ -79,8 +85,11 @@ def main() -> None:
     ]
     sig_gemini = das.generate(gemini_contents)
 
-    with open("output/example_gemini_signature.py", "w", encoding="utf-8") as f:
+    with open(
+        "examples/output/example_gemini_signature.py", "w", encoding="utf-8"
+    ) as f:
         f.write(sig_gemini.to_source())
+
     print("\nSaved Gemini signature to output/example_gemini_signature.py")
     print(f"  Inputs:  {list(sig_gemini.input_fields.keys())}")
     print(f"  Outputs: {list(sig_gemini.output_fields.keys())}")
