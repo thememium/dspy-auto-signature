@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import dspy
+import pytest
 
 import dspy_auto_signature as das
 
@@ -13,6 +14,8 @@ class TestPublicAPI:
     def test_imports(self) -> None:
         """Verify all public symbols are importable."""
         assert hasattr(das, "from_prompt")
+        assert hasattr(das, "from_dataset")
+        assert hasattr(das, "generate")
         assert hasattr(das, "configure")
         assert hasattr(das, "SignatureSpec")
 
@@ -23,3 +26,7 @@ class TestPublicAPI:
         from dspy_auto_signature.core.config import Config
 
         assert Config.get_lm() is lm
+
+    def test_from_dataset_rejects_prompt_input(self) -> None:
+        with pytest.raises(TypeError, match=r"Use generate\(\)"):
+            das.from_dataset("Summarize this")

@@ -187,6 +187,18 @@ class TestTypeResolver:
         assert origin is list
         assert inner[0] is str
 
+    @pytest.mark.parametrize(
+        ("description", "expected"),
+        [
+            ("list[str]", list[str]),
+            ("dict[str, int]", dict[str, int]),
+            ("str | None", str | None),
+            ("string or null", str | None),
+        ],
+    )
+    def test_python_style_types(self, description: str, expected: object) -> None:
+        assert TypeResolver.resolve(description) == expected
+
     # --- Pydantic model registration ---
 
     def test_register_pydantic_model(self) -> None:
