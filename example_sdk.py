@@ -31,11 +31,15 @@ def main() -> None:
     openai_messages = [
         {
             "role": "system",
-            "content": "You are a technical writer who produces clear documentation.",
+            "content": "You are a support ticket classifier that determines urgency and sentiment.",
         },
         {
             "role": "user",
-            "content": "Write a README for a Python CLI tool that converts CSV to JSON.",
+            "content": "The server room AC is out and equipment is overheating.",
+        },
+        {
+            "role": "assistant",
+            "content": "urgency: high, sentiment: negative",
         },
     ]
     sig_openai = das.generate(openai_messages)
@@ -83,10 +87,9 @@ def main() -> None:
 
     # --- Use the OpenAI-generated signature for inference ---
     dspy.configure(lm=lm)
-    writer = dspy.ChainOfThought(sig_openai.to_signature())
-    result = writer(
-        tool_name="csv2json",
-        tool_description="A CLI tool that converts CSV files to JSON with configurable options.",
+    classifier = dspy.ChainOfThought(sig_openai.to_signature())
+    result = classifier(
+        message="Can someone clean conference room B next week?",
     )
 
     print("\n--- Result ---")
