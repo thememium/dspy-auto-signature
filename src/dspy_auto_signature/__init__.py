@@ -12,7 +12,7 @@ from dspy_auto_signature.core.signature_builder import (
     GeneratedSignature,
     SignatureBuilder,
 )
-from dspy_auto_signature.generator.signature_generator import SignatureGenerator
+from dspy_auto_signature.generator.rlm_signature_generator import RLMSignatureGenerator
 from dspy_auto_signature.parser import AutoParser
 from dspy_auto_signature.types.signature_spec import SignatureSpec
 
@@ -38,10 +38,10 @@ def configure(
     via ``dspy.configure(lm=...)``.
 
     Args:
-        lm: A ``dspy.LM`` instance used by the fast path (``from_prompt``)
+        lm: A ``dspy.LM`` instance used by prompt-driven signature generation
             and as the fallback for ``dataset_lm`` and ``sub_lm``.
-        dataset_lm: The outer LM used by the slow path (``from_dataset``)
-            RLM. Falls back to ``lm`` if unset.
+        dataset_lm: Optional outer LM used when the unified RLM receives
+            dataset context. Falls back to ``lm`` if unset.
         sub_lm: The cheap inner LM used by RLM for sub-queries. Falls back
             to ``lm`` if unset.
 
@@ -65,9 +65,9 @@ def from_prompt(
 ) -> GeneratedSignature:
     """Generate a DSPy Signature class from an arbitrary prompt.
 
-    The **fast path**. Accepts raw strings, Vercel AI SDK message arrays, or
-    any combination. Uses a DSPy meta-program internally to analyse the
-    prompt and infer fields, types, and instructions.
+    Accepts raw strings, Vercel AI SDK message arrays, or any combination.
+    Uses the same unified RLM architect as :func:`from_dataset` to inspect the
+    complete task context and infer fields, types, and instructions.
 
     For data-grounded signatures from tabular inputs, use :func:`from_dataset`.
 
@@ -101,7 +101,7 @@ def from_prompt(
     parsed = AutoParser.parse(prompt)
 
     # 2. Run the meta-generator (DSPy module)
-    generator = SignatureGenerator()
+    generator = RLMSignatureGenerator()
     spec = cast(SignatureSpec, generator(parsed))
 
     # 3. Apply any user-supplied hints
@@ -132,10 +132,9 @@ def from_dataset(
 ) -> GeneratedSignature:
     """Generate a DSPy Signature class from a tabular dataset.
 
-    The **slow path**. Profiles the dataset's columns (dtypes, null rates,
-    cardinality, sample values, dtype-specific stats) and uses
-    :class:`dspy.RLM` (Recursive Language Model) to iteratively analyse the
-    data and propose a thoughtful signature.
+    Profiles the dataset's columns (dtypes, null rates, cardinality, sample
+    values, dtype-specific stats) and passes that complete context to the same
+    unified :class:`dspy.RLM` architect used by :func:`from_prompt`.
 
     Requires **Deno** to be installed (RLM uses a Deno-sandboxed Pyodide
     REPL). See the README for install instructions.
@@ -178,7 +177,7 @@ def from_dataset(
     """
     logger.debug("from_dataset called with input type: %s", type(data).__name__)
 
-    # Lazy imports: keep the fast path lightweight when only from_prompt is used.
+    # Lazy imports keep dataset dependencies optional for prompt-only usage.
     from dspy_auto_signature.generator.rlm_signature_generator import (
         RLMSignatureGenerator,
     )
