@@ -30,7 +30,7 @@ def main() -> None:
     # 2. Generate a signature from a raw prompt.
     #    This uses the RLM-based generator which iteratively analyzes the
     #    prompt using a sandboxed Python REPL before proposing a spec.
-    sig = das.from_prompt(
+    sig = das.generate(
         "Given a customer support ticket with {message}, {category}, and "
         "{priority}, predict the urgency level and suggest a response tone."
     )
