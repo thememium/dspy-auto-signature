@@ -125,11 +125,18 @@ class RLMSignatureGenerator(dspy.Module):
 
     @classmethod
     def _sanitize_sdk_spec(cls, spec: SignatureSpec) -> SignatureSpec:
+        """Strip any field names that leaked from SDK structural metadata."""
         forbidden = {
             "role",
             "content",
             "parts",
             "messages",
+            "system",
+            "developer",
+            "user",
+            "assistant",
+            "model",
+            "tool",
             "input",
             "output",
             "text",
