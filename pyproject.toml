@@ -24,7 +24,7 @@ dev = [
   "pytest>=9.0.3",
   "ruff>=0.15.14",
   "ty>=0.0.39",
-  "usechange>=0.1.28",
+  "usechange>=0.1.35",
   "pandas>=2.0",
 ]
 
