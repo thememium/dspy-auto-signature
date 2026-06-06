@@ -1,5 +1,22 @@
 # Changelog
 
+## v0.1.3 (2026-06-06)
+
+[Compare changes](https://github.com/thememium/dspy-auto-signature/compare/v0.1.2...v0.1.3)
+
+### 💅 Refactors
+
+- use ProposedSignature instead of Any for draft output ([43fe4d8](https://github.com/thememium/dspy-auto-signature/commit/43fe4d8b3284073046f2e135cbcc5777d8fe0f38))
+- **examples/sdk.py**: remove unused inference example using OpenAI-generated signature ([bebdf00](https://github.com/thememium/dspy-auto-signature/commit/bebdf00aa9d57f12ebc243273140f5e558af906c))
+
+### ✅ Tests
+
+- **rlm_signature_generator**: update output type assertion to ProposedSignature ([bd130a8](https://github.com/thememium/dspy-auto-signature/commit/bd130a8999862bcc618fe17364e9bea7397776e4))
+
+### Contributors
+
+- Edward Boswell <thememium@gmail.com>
+
 ## v0.1.2 (2026-06-06)
 
 [Compare changes](https://github.com/thememium/dspy-auto-signature/compare/v0.1.1...v0.1.2)

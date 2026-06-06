@@ -1,6 +1,6 @@
 [project]
 name = "dspy-auto-signature"
-version = "0.1.2"
+version = "0.1.3"
 description = "Generate DSPy Signatures from any prompt using a DSPy meta-program"
 readme = "README.md"
 authors = [{ name = "Edward Boswell", email = "thememium@gmail.com" }]
