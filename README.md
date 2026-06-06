@@ -157,6 +157,18 @@ See [`example_sdk.py`](example_sdk.py) for a complete runnable example.
 
 ## DataFrame Example
 
+Install with the `pandas` extra to get pandas:
+
+```bash
+uv add dspy-auto-signature[pandas]
+```
+
+Or with pip:
+
+```bash
+pip install dspy-auto-signature[pandas]
+```
+
 Datasets are profiled before generation so the RLM can use column names,
 types, distributions, and representative rows when designing the signature.
 
