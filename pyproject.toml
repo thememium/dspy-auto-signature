@@ -6,8 +6,27 @@ readme = "README.md"
 authors = [{ name = "Edward Boswell", email = "thememium@gmail.com" }]
 requires-python = ">=3.12"
 dependencies = ["dspy>=3.2.1", "pydantic>=2.13.4"]
+keywords = ["dspy", "ai"]
+classifiers = [
+  "Operating System :: OS Independent",
+  "Development Status :: 3 - Alpha",
+  "Intended Audience :: Developers",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.12",
+  "Topic :: Software Development :: Libraries :: Python Modules",
+]
+license = "MIT"
+license-files = ["LICEN[CS]E*"]
+
+[project.urls]
+Homepage = "https://github.com/thememium/dspy-auto-signature"
+Documentation = "https://github.com/thememium/dspy-auto-signature"
+Repository = "https://github.com/thememium/dspy-auto-signature.git"
+Issues = "https://github.com/thememium/dspy-auto-signature/issues"
+Changelog = "https://github.com/thememium/dspy-auto-signature/blob/master/CHANGELOG.md"
 
 [project.optional-dependencies]
+pandas = ["pandas>=2.0"]
 dataset = ["pandas>=2.0"]
 all = ["pandas>=2.0"]
 
@@ -27,6 +46,13 @@ dev = [
   "usechange>=0.1.35",
   "pandas>=2.0",
 ]
+
+[tool.pytest.ini_options]
+filterwarnings = ["ignore:.*prefix.*:DeprecationWarning:dspy.*"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["dspy_auto_signature*"]
 
 [tool.deptry]
 known_first_party = ["dspy_auto_signature"]

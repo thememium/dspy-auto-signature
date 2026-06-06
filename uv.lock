@@ -413,6 +413,9 @@ all = [
 dataset = [
     { name = "pandas" },
 ]
+pandas = [
+    { name = "pandas" },
+]
 
 [package.dev-dependencies]
 dev = [
@@ -432,9 +435,10 @@ requires-dist = [
     { name = "dspy", specifier = ">=3.2.1" },
     { name = "pandas", marker = "extra == 'all'", specifier = ">=2.0" },
     { name = "pandas", marker = "extra == 'dataset'", specifier = ">=2.0" },
+    { name = "pandas", marker = "extra == 'pandas'", specifier = ">=2.0" },
     { name = "pydantic", specifier = ">=2.13.4" },
 ]
-provides-extras = ["dataset", "all"]
+provides-extras = ["pandas", "dataset", "all"]
 
 [package.metadata.requires-dev]
 dev = [
