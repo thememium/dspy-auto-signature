@@ -32,9 +32,9 @@ dev = [
 known_first_party = ["dspy_auto_signature"]
 
 [tool.poe.tasks]
-example = "uv run example.py"
-example-dataset = "uv run example_dataset.py"
-example-sdk = "uv run example_sdk.py"
+example-basic = "uv run ./examples/basic.py"
+example-dataset = "uv run ./examples/dataset.py"
+example-sdk = "uv run ./examples/sdk.py"
 clean-full = "sh -c 'uv run isort . && uv run ruff check . --fix && uv run ruff format . && uv run deptry . && uv run ty check'"
 clean = "sh -c 'uv run isort . && uv run ruff format .'"
 test = "uv run pytest tests/ -v"
