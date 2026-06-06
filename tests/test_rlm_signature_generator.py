@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 from dspy_auto_signature.core.signature_builder import SignatureBuilder
 from dspy_auto_signature.generator.rlm_signature_generator import RLMSignatureGenerator
 from dspy_auto_signature.generator.rlm_signatures import (
     GenerateSDKSignature,
     GenerateSignature,
+    ProposedSignature,
 )
 from dspy_auto_signature.types.signature_spec import (
     FieldSpec,
@@ -28,7 +27,7 @@ class TestUnifiedRLMContract:
             "sample_rows_json",
         }
         assert set(GenerateSignature.output_fields) == {"draft"}
-        assert GenerateSignature.output_fields["draft"].annotation is Any
+        assert GenerateSignature.output_fields["draft"].annotation is ProposedSignature
 
     def test_generator_has_rlm_instances(self) -> None:
         generator = RLMSignatureGenerator(max_iterations=5, max_llm_calls=10)
