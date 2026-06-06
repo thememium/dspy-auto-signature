@@ -46,25 +46,32 @@ class TestVercelParser:
         assert parser.can_parse("not a list") is False
         assert parser.can_parse([{"no_role": "x"}]) is False
 
-    def test_parse_system_and_user(self) -> None:
+    def test_system_becomes_instruction_user_assistant_become_examples(self) -> None:
         messages = [
             {"role": "system", "content": "You are a summarizer."},
-            {"role": "user", "content": "Summarize: {article}"},
-        ]
-        parser = VercelParser()
-        result = parser.parse(messages)
-        assert "You are a summarizer." in result.instruction_text
-        assert "Summarize: {article}" in result.instruction_text
-
-    def test_parse_assistant_as_context(self) -> None:
-        messages = [
-            {"role": "system", "content": "You are helpful."},
+            {"role": "user", "content": "Summarize this article."},
             {"role": "assistant", "content": "Here is the summary."},
         ]
         parser = VercelParser()
         result = parser.parse(messages)
-        assert "You are helpful." in result.instruction_text
-        assert "Here is the summary." in result.instruction_text
+        assert result.instruction_text == "You are a summarizer."
+        assert len(result.examples) == 1
+        assert result.examples[0]["input"] == "Summarize this article."
+        assert result.examples[0]["output"] == "Here is the summary."
+
+    def test_multi_turn_conversation(self) -> None:
+        messages = [
+            {"role": "system", "content": "You translate."},
+            {"role": "user", "content": "Hello"},
+            {"role": "assistant", "content": "Hola"},
+            {"role": "user", "content": "Goodbye"},
+            {"role": "assistant", "content": "Adiós"},
+        ]
+        parser = VercelParser()
+        result = parser.parse(messages)
+        assert result.instruction_text == "You translate."
+        assert len(result.examples) == 2
+        assert result.examples[1] == {"input": "Goodbye", "output": "Adiós"}
 
 
 class TestAutoParser:
