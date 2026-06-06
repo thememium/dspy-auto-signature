@@ -31,8 +31,8 @@ def main() -> None:
     #    This uses the RLM-based generator which iteratively analyzes the
     #    prompt using a sandboxed Python REPL before proposing a spec.
     sig = das.generate(
-        "Given a customer support ticket with {message}, {category}, and "
-        "{priority}, predict the urgency level and suggest a response tone."
+        "Given a customer support ticket with {message},"
+        "predict the urgency level and sentiment."
     )
 
     # 3. Save the generated signature to a file.
