@@ -17,21 +17,40 @@ class Config:
     """
 
     _lm: dspy.LM | None = None
+    _dataset_lm: dspy.LM | None = None
+    _sub_lm: dspy.LM | None = None
 
     @classmethod
-    def configure(cls, lm: dspy.LM | None = None) -> None:
-        """Set the language model used for signature generation.
+    def configure(
+        cls,
+        lm: dspy.LM | None = None,
+        dataset_lm: dspy.LM | None = None,
+        sub_lm: dspy.LM | None = None,
+    ) -> None:
+        """Set the language models used for signature generation.
 
         If not explicitly configured, the package will attempt to use
         whatever LM is globally configured via ``dspy.configure()``.
 
         Args:
             lm: A ``dspy.LM`` instance, or ``None`` to use the global default.
+                Used for prompt context and as the fallback for ``dataset_lm``
+                and ``sub_lm``.
+            dataset_lm: Optional outer LM used when the unified RLM receives
+                dataset context. Falls back to ``lm`` if unset.
+            sub_lm: The cheap inner LM used by RLM for sub-queries. Falls
+                back to ``lm`` if unset.
 
         """
-        cls._lm = lm
         if lm is not None:
+            cls._lm = lm
             logger.info("Configured dspy-auto-signature with LM: %s", lm)
+        if dataset_lm is not None:
+            cls._dataset_lm = dataset_lm
+            logger.info("Configured dspy-auto-signature dataset_lm: %s", dataset_lm)
+        if sub_lm is not None:
+            cls._sub_lm = sub_lm
+            logger.info("Configured dspy-auto-signature sub_lm: %s", sub_lm)
 
     @classmethod
     def get_lm(cls) -> dspy.LM:
@@ -50,6 +69,22 @@ class Config:
         return lm  # type: ignore[return-value]
 
     @classmethod
+    def get_dataset_lm(cls) -> dspy.LM:
+        """Return the outer LM for dataset context, falling back to ``get_lm()``."""
+        if cls._dataset_lm is not None:
+            return cls._dataset_lm
+        return cls.get_lm()
+
+    @classmethod
+    def get_sub_lm(cls) -> dspy.LM:
+        """Return the cheap inner LM for RLM sub-queries, falling back to ``get_lm()``."""
+        if cls._sub_lm is not None:
+            return cls._sub_lm
+        return cls.get_lm()
+
+    @classmethod
     def reset(cls) -> None:
-        """Clear any explicitly-set LM and revert to global defaults."""
+        """Clear any explicitly-set LMs and revert to global defaults."""
         cls._lm = None
+        cls._dataset_lm = None
+        cls._sub_lm = None

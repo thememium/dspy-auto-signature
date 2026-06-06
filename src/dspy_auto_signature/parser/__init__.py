@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from dspy_auto_signature.parser.base import PromptParser
+from dspy_auto_signature.parser.dataframe_parser import DataFrameParser
 from dspy_auto_signature.parser.string_parser import StringParser
 from dspy_auto_signature.parser.vercel_parser import VercelParser
 from dspy_auto_signature.types.signature_spec import ParsedPrompt
@@ -14,6 +15,7 @@ class AutoParser:
     """Automatically selects and runs the right parser for the input."""
 
     _parsers: list[type[PromptParser]] = [
+        DataFrameParser,
         VercelParser,
         StringParser,
     ]
