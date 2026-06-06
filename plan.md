@@ -47,7 +47,7 @@ src/dspy_auto_signature/
 │   ├── __init__.py
 │   ├── base.py                 # Abstract prompt parser
 │   ├── string_parser.py        # Raw string / system prompt
-│   ├── vercel_parser.py        # Vercel AI SDK format
+│   ├── sdk_parser.py           # SDK message array format
 │   └── anthropic_parser.py     # Anthropic XML / Claude format
 ├── types/
 │   ├── __init__.py
@@ -64,7 +64,7 @@ src/dspy_auto_signature/
 Accepts heterogeneous inputs and normalizes them into a uniform internal representation (`ParsedPrompt`).
 
 -   `StringParser`: A raw string like `"You are a helpful assistant. Summarize articles into bullet points."`
--   `VercelParser`: Vercel AI SDK format: `[{ role: "system", content: "..." }, { role: "user", content: "..." }]`
+-   `SDKParser`: SDK message array format: `[{ role: "system", content: "..." }, { role: "user", content: "..." }]`
 -   `AnthropicParser`: Anthropic XML format or Claude-style prompts.
 
 #### 2. Signature Generator (`generator/signature_generator.py`)

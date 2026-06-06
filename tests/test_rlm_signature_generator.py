@@ -6,8 +6,16 @@ from typing import Any
 
 from dspy_auto_signature.core.signature_builder import SignatureBuilder
 from dspy_auto_signature.generator.rlm_signature_generator import RLMSignatureGenerator
-from dspy_auto_signature.generator.rlm_signatures import GenerateSignature
-from dspy_auto_signature.types.signature_spec import ParsedPrompt
+from dspy_auto_signature.generator.rlm_signatures import (
+    GenerateSDKSignature,
+    GenerateSignature,
+)
+from dspy_auto_signature.types.signature_spec import (
+    FieldSpec,
+    FieldType,
+    ParsedPrompt,
+    SignatureSpec,
+)
 
 
 class TestUnifiedRLMContract:
@@ -22,11 +30,18 @@ class TestUnifiedRLMContract:
         assert set(GenerateSignature.output_fields) == {"draft"}
         assert GenerateSignature.output_fields["draft"].annotation is Any
 
-    def test_generator_has_one_rlm(self) -> None:
+    def test_generator_has_rlm_instances(self) -> None:
         generator = RLMSignatureGenerator(max_iterations=5, max_llm_calls=10)
         assert hasattr(generator, "rlm")
-        assert not hasattr(generator, "prompt_rlm")
-        assert not hasattr(generator, "data_rlm")
+        assert hasattr(generator, "sdk_rlm")
+
+    def test_sdk_signature_has_correct_fields(self) -> None:
+        assert set(GenerateSDKSignature.input_fields) == {
+            "sdk_format",
+            "messages_json",
+            "task_hint",
+        }
+        assert set(GenerateSDKSignature.output_fields) == {"draft"}
 
 
 class TestUnifiedContext:
@@ -178,3 +193,160 @@ class TestGroundedFallback:
         assert [field.name for field in spec.inputs] == ["article", "audience"]
         assert [field.name for field in spec.outputs] == ["summary"]
         SignatureBuilder.build(spec)
+
+
+class TestSDKDetection:
+    def test_detects_openai_sdk_format(self) -> None:
+        messages = [
+            {"role": "system", "content": "You summarize articles."},
+            {"role": "user", "content": "Summarize: {article}"},
+        ]
+        prompt = ParsedPrompt(
+            instruction_text="You summarize articles.",
+            raw_input=messages,
+        )
+        assert RLMSignatureGenerator._is_sdk_format(prompt)
+
+    def test_detects_anthropic_sdk_format(self) -> None:
+        messages = [
+            {"role": "user", "content": "Analyze sentiment of {review}"},
+            {"role": "assistant", "content": "The sentiment is positive."},
+        ]
+        prompt = ParsedPrompt(
+            instruction_text="Analyze sentiment",
+            raw_input=messages,
+        )
+        assert RLMSignatureGenerator._is_sdk_format(prompt)
+
+    def test_detects_gemini_sdk_format(self) -> None:
+        messages = [
+            {"role": "user", "parts": [{"text": "Extract entities from {text}"}]},
+        ]
+        prompt = ParsedPrompt(
+            instruction_text="Extract entities",
+            raw_input=messages,
+        )
+        assert RLMSignatureGenerator._is_sdk_format(prompt)
+
+    def test_rejects_plain_string(self) -> None:
+        prompt = ParsedPrompt(
+            instruction_text="Summarize the article.",
+            raw_input="Summarize the article.",
+        )
+        assert not RLMSignatureGenerator._is_sdk_format(prompt)
+
+    def test_rejects_dataset_list(self) -> None:
+        rows = [{"message": "urgent", "label": "high"}]
+        prompt = ParsedPrompt(
+            instruction_text="Task: Predict label",
+            raw_input=rows,
+        )
+        assert not RLMSignatureGenerator._is_sdk_format(prompt)
+
+
+class TestSDKContext:
+    def test_builds_openai_context(self) -> None:
+        messages = [
+            {"role": "system", "content": "You summarize articles."},
+            {"role": "user", "content": "Summarize: {article}"},
+        ]
+        prompt = ParsedPrompt(
+            instruction_text="You summarize articles.",
+            raw_input=messages,
+        )
+        context = RLMSignatureGenerator._build_sdk_context(prompt)
+        assert context["sdk_format"] == "openai"
+        assert "You summarize articles" in context["messages_json"]
+        assert context["task_hint"] == "You summarize articles."
+
+    def test_builds_gemini_context(self) -> None:
+        messages = [
+            {"role": "user", "parts": [{"text": "Extract entities"}]},
+        ]
+        prompt = ParsedPrompt(
+            instruction_text="Extract entities",
+            raw_input=messages,
+        )
+        context = RLMSignatureGenerator._build_sdk_context(prompt)
+        assert context["sdk_format"] == "gemini"
+
+    def test_builds_anthropic_context(self) -> None:
+        messages = [
+            {
+                "role": "user",
+                "content": [{"type": "text", "text": "Analyze {review}"}],
+            },
+        ]
+        prompt = ParsedPrompt(
+            instruction_text="Analyze reviews",
+            raw_input=messages,
+        )
+        context = RLMSignatureGenerator._build_sdk_context(prompt)
+        assert context["sdk_format"] == "anthropic"
+
+
+class TestSDKSanitization:
+    def test_removes_forbidden_field_names(self) -> None:
+        spec = SignatureSpec(
+            name="TestSpec",
+            instructions="Test",
+            inputs=[
+                FieldSpec(name="role", description="Bad", field_type=FieldType.INPUT),
+                FieldSpec(
+                    name="article", description="Good", field_type=FieldType.INPUT
+                ),
+            ],
+            outputs=[
+                FieldSpec(
+                    name="content", description="Bad", field_type=FieldType.OUTPUT
+                ),
+                FieldSpec(
+                    name="summary", description="Good", field_type=FieldType.OUTPUT
+                ),
+            ],
+        )
+        clean = RLMSignatureGenerator._sanitize_sdk_spec(spec)
+        assert [f.name for f in clean.inputs] == ["article"]
+        assert [f.name for f in clean.outputs] == ["summary"]
+
+    def test_raises_when_all_inputs_forbidden(self) -> None:
+        spec = SignatureSpec(
+            name="TestSpec",
+            instructions="Test",
+            inputs=[
+                FieldSpec(name="role", description="Bad", field_type=FieldType.INPUT)
+            ],
+            outputs=[
+                FieldSpec(
+                    name="summary", description="Good", field_type=FieldType.OUTPUT
+                )
+            ],
+        )
+        try:
+            RLMSignatureGenerator._sanitize_sdk_spec(spec)
+        except ValueError as exc:
+            assert "forbidden" in str(exc)
+        else:
+            raise AssertionError("Expected ValueError for forbidden-only inputs")
+
+    def test_raises_when_all_outputs_forbidden(self) -> None:
+        spec = SignatureSpec(
+            name="TestSpec",
+            instructions="Test",
+            inputs=[
+                FieldSpec(
+                    name="article", description="Good", field_type=FieldType.INPUT
+                )
+            ],
+            outputs=[
+                FieldSpec(
+                    name="content", description="Bad", field_type=FieldType.OUTPUT
+                )
+            ],
+        )
+        try:
+            RLMSignatureGenerator._sanitize_sdk_spec(spec)
+        except ValueError as exc:
+            assert "forbidden" in str(exc)
+        else:
+            raise AssertionError("Expected ValueError for forbidden-only outputs")

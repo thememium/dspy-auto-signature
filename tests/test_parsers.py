@@ -6,8 +6,8 @@ import pytest
 
 from dspy_auto_signature.parser import AutoParser
 from dspy_auto_signature.parser.base import PromptParser
+from dspy_auto_signature.parser.sdk_parser import SDKParser
 from dspy_auto_signature.parser.string_parser import StringParser
-from dspy_auto_signature.parser.vercel_parser import VercelParser
 from dspy_auto_signature.types.signature_spec import ParsedPrompt
 
 
@@ -39,32 +39,39 @@ class TestStringParser:
         assert result.examples[0]["output"] == "AI is transforming technology"
 
 
-class TestVercelParser:
-    def test_can_parse_vercel_format(self) -> None:
-        parser = VercelParser()
+class TestSDKParser:
+    def test_can_parse_sdk_format(self) -> None:
+        parser = SDKParser()
         assert parser.can_parse([{"role": "system", "content": "hi"}]) is True
         assert parser.can_parse("not a list") is False
         assert parser.can_parse([{"no_role": "x"}]) is False
 
-    def test_parse_system_and_user(self) -> None:
+    def test_system_becomes_instruction_user_assistant_become_examples(self) -> None:
         messages = [
             {"role": "system", "content": "You are a summarizer."},
-            {"role": "user", "content": "Summarize: {article}"},
-        ]
-        parser = VercelParser()
-        result = parser.parse(messages)
-        assert "You are a summarizer." in result.instruction_text
-        assert "Summarize: {article}" in result.instruction_text
-
-    def test_parse_assistant_as_context(self) -> None:
-        messages = [
-            {"role": "system", "content": "You are helpful."},
+            {"role": "user", "content": "Summarize this article."},
             {"role": "assistant", "content": "Here is the summary."},
         ]
-        parser = VercelParser()
+        parser = SDKParser()
         result = parser.parse(messages)
-        assert "You are helpful." in result.instruction_text
-        assert "Here is the summary." in result.instruction_text
+        assert result.instruction_text == "You are a summarizer."
+        assert len(result.examples) == 1
+        assert result.examples[0]["input"] == "Summarize this article."
+        assert result.examples[0]["output"] == "Here is the summary."
+
+    def test_multi_turn_conversation(self) -> None:
+        messages = [
+            {"role": "system", "content": "You translate."},
+            {"role": "user", "content": "Hello"},
+            {"role": "assistant", "content": "Hola"},
+            {"role": "user", "content": "Goodbye"},
+            {"role": "assistant", "content": "Adiós"},
+        ]
+        parser = SDKParser()
+        result = parser.parse(messages)
+        assert result.instruction_text == "You translate."
+        assert len(result.examples) == 2
+        assert result.examples[1] == {"input": "Goodbye", "output": "Adiós"}
 
 
 class TestAutoParser:
@@ -79,7 +86,7 @@ class TestAutoParser:
         assert isinstance(result, ParsedPrompt)
         assert result.instruction_text == "Just a string"
 
-    def test_auto_selects_vercel_parser(self) -> None:
+    def test_auto_selects_sdk_parser(self) -> None:
         result = AutoParser.parse([{"role": "system", "content": "test"}])
         assert isinstance(result, ParsedPrompt)
         assert "test" in result.instruction_text

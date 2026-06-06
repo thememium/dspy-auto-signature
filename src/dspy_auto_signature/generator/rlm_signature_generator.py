@@ -13,6 +13,7 @@ from pydantic import BaseModel
 
 from dspy_auto_signature.core.config import Config
 from dspy_auto_signature.generator.rlm_signatures import (
+    GenerateSDKSignature,
     GenerateSignature,
     ProposedField,
 )
@@ -42,9 +43,19 @@ class RLMSignatureGenerator(dspy.Module):
             sub_lm=sub_lm,
             verbose=verbose,
         )
+        self.sdk_rlm = dspy.RLM(
+            GenerateSDKSignature,
+            max_iterations=max_iterations,
+            max_llm_calls=max_llm_calls,
+            sub_lm=sub_lm,
+            verbose=verbose,
+        )
 
     def forward(self, prompt: ParsedPrompt) -> SignatureSpec:
         """Build unified context, run one RLM, and normalize its complete draft."""
+        if self._is_sdk_format(prompt):
+            return self._forward_sdk(prompt)
+
         context = self._build_context(prompt)
         lm = (
             Config.get_dataset_lm()
@@ -62,6 +73,84 @@ class RLMSignatureGenerator(dspy.Module):
                 exc,
             )
             return self._fallback_from_context(context)
+
+    def _forward_sdk(self, prompt: ParsedPrompt) -> SignatureSpec:
+        context = self._build_sdk_context(prompt)
+        lm = Config.get_lm()
+
+        try:
+            with dspy.settings.context(lm=lm):
+                result = self.sdk_rlm(**context)
+            spec = self._draft_to_spec(result.draft)
+            return self._sanitize_sdk_spec(spec)
+        except Exception as exc:
+            logger.warning(
+                "SDK RLM signature generation failed; using standard fallback: %s",
+                exc,
+            )
+            return self._fallback_from_context(self._build_context(prompt))
+
+    @staticmethod
+    def _is_sdk_format(prompt: ParsedPrompt) -> bool:
+        raw = prompt.raw_input
+        if not isinstance(raw, list) or not raw:
+            return False
+        return all(isinstance(m, dict) and "role" in m for m in raw)
+
+    @classmethod
+    def _build_sdk_context(cls, prompt: ParsedPrompt) -> dict[str, str]:
+        raw = prompt.raw_input
+        messages: list[dict[str, Any]] = raw if isinstance(raw, list) else []
+
+        sdk_format = cls._detect_sdk_format(messages)
+
+        return {
+            "sdk_format": sdk_format,
+            "messages_json": json.dumps(messages, indent=2, default=str),
+            "task_hint": prompt.instruction_text,
+        }
+
+    @staticmethod
+    def _detect_sdk_format(messages: list[dict[str, Any]]) -> str:
+        if not messages:
+            return "generic"
+        first_msg = messages[0]
+        if "parts" in first_msg:
+            return "gemini"
+        if any(isinstance(m.get("content"), list) for m in messages):
+            return "anthropic"
+        if "role" in first_msg and "content" in first_msg:
+            return "openai"
+        return "generic"
+
+    @classmethod
+    def _sanitize_sdk_spec(cls, spec: SignatureSpec) -> SignatureSpec:
+        """Strip any field names that leaked from SDK structural metadata."""
+        forbidden = {
+            "role",
+            "content",
+            "parts",
+            "messages",
+            "system",
+            "developer",
+            "user",
+            "assistant",
+            "model",
+            "tool",
+            "input",
+            "output",
+            "text",
+            "data",
+            "result",
+        }
+
+        inputs = [f for f in spec.inputs if f.name not in forbidden]
+        outputs = [f for f in spec.outputs if f.name not in forbidden]
+
+        if not inputs or not outputs:
+            raise ValueError("SDK spec contained only forbidden field names")
+
+        return spec.model_copy(update={"inputs": inputs, "outputs": outputs})
 
     @classmethod
     def _build_context(cls, prompt: ParsedPrompt) -> dict[str, str]:
