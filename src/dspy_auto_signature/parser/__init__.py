@@ -6,8 +6,8 @@ from typing import Any
 
 from dspy_auto_signature.parser.base import PromptParser
 from dspy_auto_signature.parser.dataframe_parser import DataFrameParser
+from dspy_auto_signature.parser.sdk_parser import SDKParser
 from dspy_auto_signature.parser.string_parser import StringParser
-from dspy_auto_signature.parser.vercel_parser import VercelParser
 from dspy_auto_signature.types.signature_spec import ParsedPrompt
 
 
@@ -16,7 +16,7 @@ class AutoParser:
 
     _parsers: list[type[PromptParser]] = [
         DataFrameParser,
-        VercelParser,
+        SDKParser,
         StringParser,
     ]
 
