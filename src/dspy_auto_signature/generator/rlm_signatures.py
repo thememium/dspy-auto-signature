@@ -50,8 +50,10 @@ class GenerateSignature(dspy.Signature):
        Placeholder names such as ``{article}`` are authoritative input names.
     5. Include every necessary input and output, but do not expose internal reasoning
        steps as fields unless the task explicitly requests them.
-    6. Use semantic names. Never use generic placeholders such as ``input_text``,
-       ``output_text``, ``data``, ``result``, or ``AutoSignature``.
+    6. Use semantic names. Never use generic placeholders such as ``input``,
+       ``output``, ``input_text``, ``output_text``, ``data``, ``result``, or
+       ``AutoSignature``. The ``input`` and ``output`` keys in example dicts are
+       structural labels, not field name suggestions.
     7. Write useful doctrine: specific instructions describing the task, constraints,
        and expected output behavior.
     8. Use the most specific practical types, including literal types for known
