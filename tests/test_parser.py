@@ -6,8 +6,8 @@ import pytest
 
 from dspy_auto_signature.parser import AutoParser
 from dspy_auto_signature.parser.base import PromptParser
+from dspy_auto_signature.parser.sdk_parser import SDKParser
 from dspy_auto_signature.parser.string_parser import StringParser
-from dspy_auto_signature.parser.vercel_parser import VercelParser
 from dspy_auto_signature.types.signature_spec import ParsedPrompt
 
 
@@ -49,18 +49,18 @@ class TestStringParser:
         assert result.instruction_text == ""
 
 
-class TestVercelParser:
-    """Tests for VercelParser."""
+class TestSDKParser:
+    """Tests for SDKParser."""
 
-    def test_can_parse_vercel_format(self) -> None:
-        parser = VercelParser()
+    def test_can_parse_sdk_format(self) -> None:
+        parser = SDKParser()
         assert parser.can_parse([{"role": "user", "content": "hi"}]) is True
         assert parser.can_parse("hello") is False
         assert parser.can_parse([]) is False
         assert parser.can_parse([{"not_role": "x"}]) is False
 
     def test_system_becomes_instruction(self) -> None:
-        parser = VercelParser()
+        parser = SDKParser()
         messages = [
             {"role": "system", "content": "You summarize articles."},
             {"role": "user", "content": "Summarize this article about AI."},
@@ -73,7 +73,7 @@ class TestVercelParser:
         assert result.examples[0]["output"] == "AI is transforming industries."
 
     def test_user_assistant_pairs_become_examples(self) -> None:
-        parser = VercelParser()
+        parser = SDKParser()
         messages = [
             {"role": "system", "content": "You are a translator."},
             {"role": "user", "content": "Translate to French: Hello"},
@@ -94,7 +94,7 @@ class TestVercelParser:
         }
 
     def test_google_gemini_parts_format(self) -> None:
-        parser = VercelParser()
+        parser = SDKParser()
         messages = [
             {"role": "user", "parts": [{"text": "Extract entities."}]},
             {"role": "model", "parts": [{"text": "I'll identify key entities."}]},
@@ -106,7 +106,7 @@ class TestVercelParser:
         assert result.examples[0]["output"] == "I'll identify key entities."
 
     def test_anthropic_content_blocks(self) -> None:
-        parser = VercelParser()
+        parser = SDKParser()
         messages = [
             {"role": "user", "content": [{"type": "text", "text": "Analyze this."}]},
             {
@@ -120,7 +120,7 @@ class TestVercelParser:
         assert result.examples[0]["output"] == "Analysis complete."
 
     def test_tool_role_appended_to_instruction(self) -> None:
-        parser = VercelParser()
+        parser = SDKParser()
         messages = [
             {"role": "system", "content": "You use tools."},
             {"role": "tool", "content": "Result: 42"},
@@ -143,7 +143,7 @@ class TestAutoParser:
         result = AutoParser.parse("Hello world")
         assert result.instruction_text == "Hello world"
 
-    def test_parse_vercel(self) -> None:
+    def test_parse_sdk(self) -> None:
         messages = [
             {"role": "system", "content": "You translate."},
         ]
