@@ -45,7 +45,7 @@ AutoSignature is a **meta-DSPy** program: a DSPy module that generates DSPy sign
 - **Composable** — The meta-generator benefits from DSPy optimizers (BootstrapFewShot, MIPRO, etc.)
 - **Type safe** — Generated signatures are real Python classes with typed fields
 
-Requires **Python 3.10+** and **DSPy 3.1+**.
+Requires **Python 3.12+** and **DSPy 3.2+**.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -80,7 +80,7 @@ import dspy_auto_signature as das
 das.configure(lm=dspy.LM("openrouter/openai/gpt-oss-120b"))
 
 # 2. Generate a signature from a raw prompt
-sig = das.from_prompt("Summarize the following article into 3 short bullet points")
+sig = das.generate("Summarize the following article into 3 short bullet points")
 
 # 3. Inspect what was generated
 print(f"Generated signature: {sig}")
@@ -123,13 +123,13 @@ print(result)
 ### Raw String
 
 ```python
-sig = das.from_prompt("Extract named entities from the given text")
+sig = das.generate("Extract named entities from the given text")
 ```
 
 ### Vercel AI SDK Format
 
 ```python
-sig = das.from_prompt([
+sig = das.generate([
     {"role": "system", "content": "You are a summarizer"},
     {"role": "user", "content": "Summarize: {article}"}
 ])
@@ -140,7 +140,7 @@ sig = das.from_prompt([
 Override or supplement inferred fields:
 
 ```python
-sig = das.from_prompt(
+sig = das.generate(
     "Extract entities from text",
     input_hints={"text": "The article to analyze"},
     output_hints={"entities": "list of named entities"}
@@ -158,7 +158,7 @@ import dspy_auto_signature as das
 das.configure(lm=dspy.LM("openrouter/openai/gpt-oss-120b"))
 
 # 2. Generate signature from a complex prompt
-sig = das.from_prompt("""
+sig = das.generate("""
 You are an expert code reviewer. Given a pull request description and diff,
 provide:
 1. A summary of the changes
@@ -209,7 +209,8 @@ The fast path reads your prompt text and infers field shapes from the descriptio
 
 ### Prerequisites
 
-The slow path uses `dspy.RLM`, which requires **Deno** (sandboxed Python REPL runtime):
+Signature generation uses `dspy.RLM`, which requires **Deno** for its sandboxed
+REPL runtime:
 
 ```bash
 brew install deno   # macOS
@@ -230,7 +231,7 @@ das.configure(
 )
 
 df = pd.read_csv("tickets.csv")
-sig = das.from_dataset(df, task_hint="Classify support tickets by urgency and sentiment")
+sig = das.generate(df, task_hint="Classify support tickets by urgency and sentiment")
 ```
 
 ### From a list of dicts
@@ -241,7 +242,7 @@ rows = [
     {"message": "Please clean conf room B", "urgency": "low", "sentiment": "neutral"},
     {"message": "Thanks for the quick fix!", "urgency": "low", "sentiment": "positive"},
 ]
-sig = das.from_dataset(rows, task_hint="Classify support tickets")
+sig = das.generate(rows, task_hint="Classify support tickets")
 ```
 
 ### From a list of `dspy.Example`
@@ -253,12 +254,12 @@ examples = [
     dspy.Example(message="Server is on fire", urgency="high", sentiment="negative").with_inputs("message"),
     dspy.Example(message="Please clean conf room B", urgency="low", sentiment="neutral").with_inputs("message"),
 ]
-sig = das.from_dataset(examples)
+sig = das.generate(examples)
 ```
 
 ### Supported input types
 
-`from_dataset` accepts (duck-typed, no hard imports required):
+`generate` accepts these dataset types (duck-typed, no hard imports required):
 
 - `list[dict]`
 - `pandas.DataFrame`
@@ -278,26 +279,16 @@ The slow path uses `dspy.RLM` with `max_iterations=20` and `max_llm_calls=50` by
 
 ## API
 
-### `from_prompt(prompt, input_hints=None, output_hints=None)`
+### `generate(source, task_hint=None, *, input_hints=None, output_hints=None)`
 
-Generate a `dspy.Signature` subclass from arbitrary prompt material.
-
-| Parameter | Type | Description |
-| --- | --- | --- |
-| `prompt` | `str \| list[dict[str, str]] \| Any` | The prompt material. Can be a raw string, Vercel AI SDK message array, or any supported format |
-| `input_hints` | `dict[str, str] \| None` | Optional mapping of field-name → description for known inputs |
-| `output_hints` | `dict[str, str] \| None` | Optional mapping of field-name → description for known outputs |
-
-**Returns:** A fresh `dspy.Signature` subclass compatible with `dspy.Predict`, `dspy.ChainOfThought`, etc.
-
-### `from_dataset(data, task_hint=None, *, input_hints=None, output_hints=None)`
-
-Generate a `dspy.Signature` subclass from a dataset by profiling its columns and using DSPy RLM to iteratively analyze the data.
+Generate a `dspy.Signature` subclass from prompt material or a dataset. This is
+the recommended API; `from_prompt` and `from_dataset` remain as explicit,
+backward-compatible wrappers.
 
 | Parameter | Type | Description |
 | --- | --- | --- |
-| `data` | `DataFrame \| list[dict] \| list[dspy.Example] \| Any` | The dataset. Accepts pandas/polars DataFrames, lists of dicts, lists of `dspy.Example`, or any object with `.to_dicts()`/`.to_pandas()`/`.to_dict()` |
-| `task_hint` | `str \| None` | Optional natural-language description of the task to bias the RLM |
+| `source` | `Any` | Raw prompt, message array, dataset, or registered custom source |
+| `task_hint` | `str \| None` | Optional task description, especially useful for identifying dataset targets |
 | `input_hints` | `dict[str, str] \| None` | Optional mapping of field-name → description for known inputs |
 | `output_hints` | `dict[str, str] \| None` | Optional mapping of field-name → description for known outputs |
 
@@ -311,8 +302,8 @@ Set the language models used for signature generation.
 
 | Parameter | Type | Description |
 | --- | --- | --- |
-| `lm` | `dspy.LM \| None` | The meta-LM used for the fast path (`from_prompt`). Falls back to `dspy.settings.lm` if unset |
-| `dataset_lm` | `dspy.LM \| None` | The RLM outer LM used for the slow path (`from_dataset`). Falls back to `lm` if unset |
+| `lm` | `dspy.LM \| None` | The default meta-LM used for signature generation. Falls back to `dspy.settings.lm` if unset |
+| `dataset_lm` | `dspy.LM \| None` | Optional outer LM override for dataset generation. Falls back to `lm` if unset |
 | `sub_lm` | `dspy.LM \| None` | The cheap inner LM used by RLM for sub-queries. Falls back to `lm` if unset |
 
 The fast-path `lm` and slow-path `dataset_lm` are completely independent from the runtime LM you use with your generated signatures.
@@ -339,12 +330,13 @@ dspy.configure(lm=dspy.LM("openai/gpt-4o-mini"))
 
 ```
 src/dspy_auto_signature/
-├── __init__.py              # Public API: from_prompt(), configure()
+├── __init__.py              # Public API and unified generation workflow
 ├── core/
 │   ├── signature_builder.py # Builds dspy.Signature classes from specs
 │   └── config.py            # Package configuration (LM, defaults)
 ├── generator/
-│   └── signature_generator.py  # The DSPy meta-module
+│   ├── rlm_signature_generator.py # Unified RLM meta-module
+│   └── rlm_signatures.py         # RLM input/output contract
 ├── parser/
 │   ├── base.py              # Abstract prompt parser
 │   ├── string_parser.py     # Raw string / system prompt
@@ -359,7 +351,7 @@ src/dspy_auto_signature/
 ### Key Components
 
 1. **Parser Layer** (`parser/`): Accepts heterogeneous inputs and normalises them into `ParsedPrompt`
-2. **Signature Generator** (`generator/signature_generator.py`): A 3-step DSPy `Module` that analyses prompts and produces `SignatureSpec`
+2. **Signature Generator** (`generator/rlm_signature_generator.py`): A unified RLM workflow that analyzes all available context and produces `SignatureSpec`
 3. **Signature Builder** (`core/signature_builder.py`): Constructs actual `dspy.Signature` subclasses using `dspy.signatures.make_signature`
 4. **Type Resolver** (`utils/type_resolver.py`): Maps natural language type descriptions to Python types
 
@@ -368,10 +360,7 @@ src/dspy_auto_signature/
 ```
 Raw Prompt Input
     → Parser (normalises heterogeneous formats)
-    → SignatureGenerator (DSPy module)
-        1. Analyze: Extract task name and instruction
-        2. Extract Fields: Identify inputs and outputs
-        3. Refine: Polish names, types, and descriptions
+    → RLMSignatureGenerator (inspect context and propose a complete spec)
     → SignatureBuilder (constructs dspy.Signature subclass)
     → type[dspy.Signature] (a real class, ready to use)
 ```

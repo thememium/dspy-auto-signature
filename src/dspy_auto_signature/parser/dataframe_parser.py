@@ -34,6 +34,9 @@ class DataFrameParser(PromptParser):
 
     def can_parse(self, raw: Any) -> bool:  # noqa: C901 — intentionally exhaustive
         # Cheapest checks first.
+        if isinstance(raw, dict):
+            return True
+
         try:
             import pandas as pd  # type: ignore[import-untyped]
 
@@ -45,6 +48,8 @@ class DataFrameParser(PromptParser):
         if hasattr(raw, "to_dicts"):
             return True
         if hasattr(raw, "to_pandas"):
+            return True
+        if hasattr(raw, "to_dict") and not isinstance(raw, (str, bytes)):
             return True
 
         if isinstance(raw, list):
@@ -73,6 +78,9 @@ class DataFrameParser(PromptParser):
             instruction_text=instruction_text,
             examples=examples,
             raw_input=raw,
+            source_kind="dataset",
+            data_profile=profile,
+            sample_rows=rows[:5],
         )
 
     @staticmethod

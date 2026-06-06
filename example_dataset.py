@@ -1,6 +1,6 @@
 """Dataset-driven (slow path) example for dspy-auto-signature.
 
-Demonstrates ``from_dataset()`` with a pandas DataFrame and a list of dicts.
+Demonstrates ``generate()`` with a pandas DataFrame and a list of dicts.
 Requires Deno to be installed for the RLM (Recursive Language Model) sandbox:
 
     brew install deno   # macOS
@@ -49,7 +49,7 @@ def from_dataframe_example() -> None:
         },
     )
 
-    sig = das.from_dataset(
+    sig = das.generate(
         df,
         task_hint="Classify support tickets by urgency and sentiment",
     )
@@ -86,7 +86,7 @@ def from_list_example() -> None:
         },
     ]
 
-    sig = das.from_dataset(
+    sig = das.generate(
         rows,
         task_hint="Classify support tickets by urgency and sentiment",
     )

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import keyword
 import logging
 from typing import Any, cast
 
@@ -13,10 +14,11 @@ from dspy_auto_signature.core.signature_builder import (
     SignatureBuilder,
 )
 from dspy_auto_signature.generator.rlm_signature_generator import RLMSignatureGenerator
-from dspy_auto_signature.parser import AutoParser
+from dspy_auto_signature.parser import AutoParser, DataFrameParser
 from dspy_auto_signature.types.signature_spec import SignatureSpec
 
 __all__ = [
+    "generate",
     "from_prompt",
     "from_dataset",
     "configure",
@@ -95,32 +97,11 @@ def from_prompt(
         >>> result = summarizer(article="Long text here...")
 
     """
-    logger.debug("from_prompt called with input type: %s", type(prompt).__name__)
-
-    # 1. Parse heterogeneous input into a normalised form
-    parsed = AutoParser.parse(prompt)
-
-    # 2. Run the meta-generator (DSPy module)
-    generator = RLMSignatureGenerator()
-    spec = cast(SignatureSpec, generator(parsed))
-
-    # 3. Apply any user-supplied hints
-    if input_hints:
-        spec = _apply_hints(spec, input_hints, is_input=True)
-    if output_hints:
-        spec = _apply_hints(spec, output_hints, is_input=False)
-
-    # 4. Build the actual DSPy Signature class
-    sig_class = SignatureBuilder.build(spec)
-
-    logger.info(
-        "Generated signature '%s' (%d inputs, %d outputs)",
-        spec.name,
-        len(spec.inputs),
-        len(spec.outputs),
+    return generate(
+        prompt,
+        input_hints=input_hints,
+        output_hints=output_hints,
     )
-
-    return sig_class
 
 
 def from_dataset(
@@ -175,78 +156,99 @@ def from_dataset(
         >>> sig = das.from_dataset(df, task_hint="Classify support tickets")
 
     """
-    logger.debug("from_dataset called with input type: %s", type(data).__name__)
-
-    # Lazy imports keep dataset dependencies optional for prompt-only usage.
-    from dspy_auto_signature.generator.rlm_signature_generator import (
-        RLMSignatureGenerator,
-    )
-    from dspy_auto_signature.parser import DataFrameParser
-    from dspy_auto_signature.types.signature_spec import ParsedPrompt
-
     if not DataFrameParser().can_parse(data):
         raise TypeError(
             f"from_dataset() cannot handle input of type {type(data).__name__}. "
-            "Expected: list[dict], pandas DataFrame, polars DataFrame/LazyFrame, "
-            "list[dspy.Example], or any object with .to_dicts()/.to_pandas()/.to_dict()."
+            "Use generate() for automatic source detection."
         )
-    parsed = DataFrameParser().parse(data)
+    return generate(
+        data,
+        task_hint=task_hint,
+        input_hints=input_hints,
+        output_hints=output_hints,
+    )
 
+
+def generate(
+    source: Any,
+    task_hint: str | None = None,
+    *,
+    input_hints: dict[str, str] | None = None,
+    output_hints: dict[str, str] | None = None,
+) -> GeneratedSignature:
+    """Generate a DSPy Signature from prompt material or tabular data.
+
+    This is the simplest entry point. The parser automatically distinguishes
+    prompts, message arrays, datasets, and registered custom source types.
+
+    Args:
+        source: Prompt material or tabular data accepted by the parser layer.
+        task_hint: Optional task description. Most useful for datasets, where
+            it identifies which columns should be predicted.
+        input_hints: Field names mapped to improved input descriptions.
+        output_hints: Field names mapped to improved output descriptions.
+
+    Returns:
+        A fresh ``dspy.Signature`` subclass.
+
+    """
+    logger.debug("generate called with input type: %s", type(source).__name__)
+    parsed = AutoParser.parse(source)
     if task_hint:
-        parsed = ParsedPrompt(
-            instruction_text=f"{parsed.instruction_text}\n\nTask: {task_hint}",
-            examples=parsed.examples,
-            raw_input=parsed.raw_input,
+        parsed = parsed.model_copy(
+            update={
+                "instruction_text": f"{parsed.instruction_text}\n\nTask: {task_hint}"
+            }
         )
 
-    lm = Config.get_dataset_lm()
-    sub_lm = Config.get_sub_lm()
-    generator = RLMSignatureGenerator(sub_lm=sub_lm)
-    with dspy.settings.context(lm=lm):
-        spec = cast(SignatureSpec, generator(parsed))
-
-    if input_hints:
-        spec = _apply_hints(spec, input_hints, is_input=True)
-    if output_hints:
-        spec = _apply_hints(spec, output_hints, is_input=False)
-
-    sig_class = SignatureBuilder.build(spec)
+    generator = RLMSignatureGenerator(sub_lm=Config.get_sub_lm())
+    spec = cast(SignatureSpec, generator(parsed))
+    spec = _apply_hints(spec, input_hints, output_hints)
+    signature = SignatureBuilder.build(spec)
 
     logger.info(
-        "Generated signature '%s' (%d inputs, %d outputs) from dataset",
+        "Generated signature '%s' (%d inputs, %d outputs)",
         spec.name,
         len(spec.inputs),
         len(spec.outputs),
     )
-
-    return sig_class
+    return signature
 
 
 def _apply_hints(
     spec: SignatureSpec,
-    hints: dict[str, str],
-    *,
-    is_input: bool,
+    input_hints: dict[str, str] | None,
+    output_hints: dict[str, str] | None,
 ) -> SignatureSpec:
-    """Merge user hints into a SignatureSpec."""
+    """Merge user hints into a copied ``SignatureSpec``."""
     from dspy_auto_signature.types.signature_spec import FieldSpec, FieldType
 
-    target_list = spec.inputs if is_input else spec.outputs
-    field_type = FieldType.INPUT if is_input else FieldType.OUTPUT
-
-    # Build a lookup by name
-    existing = {f.name: f for f in target_list}
-
-    for name, description in hints.items():
-        if name in existing:
-            existing[name].description = description
-        else:
-            target_list.append(
-                FieldSpec(
-                    name=name,
-                    description=description,
-                    field_type=field_type,
-                ),
-            )
+    spec = spec.model_copy(deep=True)
+    used = {field.name for field in spec.all_fields}
+    for hints, target_list, field_type in (
+        (input_hints, spec.inputs, FieldType.INPUT),
+        (output_hints, spec.outputs, FieldType.OUTPUT),
+    ):
+        existing = {field.name: field for field in target_list}
+        for name, description in (hints or {}).items():
+            if not name.isidentifier() or keyword.iskeyword(name):
+                raise ValueError(
+                    f"Hint field name must be a valid identifier: {name!r}"
+                )
+            if not description.strip():
+                raise ValueError(f"Hint description for {name!r} cannot be empty")
+            if name in existing:
+                existing[name].description = description.strip()
+            elif name in used:
+                raise ValueError(f"Hint field {name!r} conflicts with another field")
+            else:
+                target_list.append(
+                    FieldSpec(
+                        name=name,
+                        description=description.strip(),
+                        field_type=field_type,
+                    ),
+                )
+                used.add(name)
 
     return spec

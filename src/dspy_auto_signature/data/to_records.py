@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any
 
 
@@ -20,8 +21,13 @@ def _example_to_dict(obj: Any) -> dict[str, Any]:
 
 def _to_dicts(obj: Any) -> list[dict[str, Any]]:
     """Attempt to coerce *obj* to a list of dicts using duck typing."""
+    if isinstance(obj, Mapping):
+        return [dict(obj)]
+
     if isinstance(obj, list):
-        return obj
+        if all(isinstance(row, Mapping) for row in obj):
+            return [dict(row) for row in obj]
+        raise TypeError("Lists used as datasets must contain only mapping records.")
 
     if hasattr(obj, "to_dicts"):
         result = obj.to_dicts()
@@ -34,9 +40,15 @@ def _to_dicts(obj: Any) -> list[dict[str, Any]]:
             return df.to_dicts()
 
     if hasattr(obj, "to_dict"):
-        result = obj.to_dict(orient="records")
+        try:
+            result = obj.to_dict(orient="records")
+        except TypeError:
+            result = obj.to_dict()
         if isinstance(result, list):
-            return result
+            if all(isinstance(row, Mapping) for row in result):
+                return [dict(row) for row in result]
+        if isinstance(result, Mapping):
+            return [dict(result)]
 
     if hasattr(obj, "to_pandas"):
         pd_df = obj.to_pandas()
@@ -79,7 +91,7 @@ def to_records(obj: Any) -> list[dict[str, Any]]:
         return [_example_to_dict(obj)]
 
     # List — check if elements are dspy.Example instances
-    if isinstance(obj, list) and obj and any(_is_dspy_example(el) for el in obj):
+    if isinstance(obj, list) and obj and all(_is_dspy_example(el) for el in obj):
         return [_example_to_dict(el) for el in obj]
 
     return _to_dicts(obj)

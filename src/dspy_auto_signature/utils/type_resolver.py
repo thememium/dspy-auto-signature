@@ -108,6 +108,29 @@ class TypeResolver:
             return str
 
         cleaned = type_desc.strip().lower()
+        cleaned = re.sub(r"\s+", " ", cleaned)
+
+        # Handle common Python-style annotations emitted by language models.
+        python_generic = re.match(
+            r"^(list|set|tuple|dict)\s*\[(.+)\]$",
+            cleaned,
+        )
+        if python_generic:
+            container_name, args_text = python_generic.groups()
+            args = cls._split_type_args(args_text)
+            resolved = tuple(cls.resolve(arg) for arg in args)
+            if container_name == "dict" and len(resolved) == 2:
+                return dict[resolved[0], resolved[1]]  # type: ignore
+            if container_name == "tuple" and len(resolved) == 2 and args[1] == "...":
+                return tuple[resolved[0], ...]  # type: ignore
+            if len(resolved) == 1:
+                container = {"list": list, "set": set, "tuple": tuple}[container_name]
+                return container[resolved[0]]
+
+        if "|" in cleaned:
+            parts = [part.strip() for part in cleaned.split("|") if part.strip()]
+            if len(parts) >= 2:
+                return cls._make_union(parts)
 
         # Handle Literal types: "literal X, Y, Z" / "one of X, Y, Z" / "enum X, Y, Z"
         literal_match = cls._LITERAL_PATTERN.match(cleaned)
@@ -124,6 +147,10 @@ class TypeResolver:
         # Handle "nullable X" → X | None
         if cleaned.startswith("nullable "):
             inner = cls.resolve(cleaned[9:])
+            return inner | None  # type: ignore[return-value]
+
+        if cleaned.endswith(" or null"):
+            inner = cls.resolve(cleaned[:-8])
             return inner | None  # type: ignore[return-value]
 
         # Handle container generics: "list of X", "array of X"
@@ -156,11 +183,7 @@ class TypeResolver:
                 p.strip() for p in re.split(r",?\s*or\s+|,\s+", cleaned) if p.strip()
             ]
             if len(parts) >= 2:
-                resolved = [cls.resolve(p) for p in parts]
-                result = resolved[0]
-                for t in resolved[1:]:
-                    result = result | t  # type: ignore[assignment]
-                return result  # type: ignore[return-value]
+                return cls._make_union(parts)
 
         # Exact match on aliases
         if cleaned in cls._ALIASES:
@@ -178,6 +201,37 @@ class TypeResolver:
 
         # Fallback: assume it's a string field
         return str
+
+    @classmethod
+    def _make_union(
+        cls, descriptions: list[str]
+    ) -> type[Any] | types.UnionType | types.GenericAlias:
+        """Resolve descriptions and combine them into a union."""
+        resolved = [
+            type(None) if value in {"none", "null"} else cls.resolve(value)
+            for value in descriptions
+        ]
+        result = resolved[0]
+        for member in resolved[1:]:
+            result = result | member  # type: ignore[assignment, operator]
+        return result  # type: ignore[return-value]
+
+    @staticmethod
+    def _split_type_args(value: str) -> list[str]:
+        """Split comma-separated generic arguments while preserving nesting."""
+        parts: list[str] = []
+        depth = 0
+        start = 0
+        for index, char in enumerate(value):
+            if char == "[":
+                depth += 1
+            elif char == "]":
+                depth -= 1
+            elif char == "," and depth == 0:
+                parts.append(value[start:index].strip())
+                start = index + 1
+        parts.append(value[start:].strip())
+        return parts
 
     @classmethod
     def register(cls, name: str, py_type: type[Any]) -> None:

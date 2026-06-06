@@ -15,6 +15,13 @@ class TestToRecords:
     def test_empty_list(self) -> None:
         assert to_records([]) == []
 
+    def test_single_dict(self) -> None:
+        assert to_records({"a": 1}) == [{"a": 1}]
+
+    def test_mixed_list_raises_clear_error(self) -> None:
+        with pytest.raises(TypeError, match="only mapping records"):
+            to_records([{"a": 1}, "not a record"])
+
     def test_unsupported_raises(self) -> None:
         with pytest.raises(TypeError, match="Cannot convert.*to list of dicts"):
             to_records(42)
@@ -61,3 +68,10 @@ class TestToRecords:
 
         result = to_records(FakeFrame())
         assert result == [{"x": 1}, {"x": 2}]
+
+    def test_object_with_plain_to_dict(self) -> None:
+        class Record:
+            def to_dict(self) -> dict[str, int]:
+                return {"x": 1}
+
+        assert to_records(Record()) == [{"x": 1}]
