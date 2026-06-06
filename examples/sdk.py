@@ -94,16 +94,6 @@ def main() -> None:
     print(f"  Inputs:  {list(sig_gemini.input_fields.keys())}")
     print(f"  Outputs: {list(sig_gemini.output_fields.keys())}")
 
-    # --- Use the OpenAI-generated signature for inference ---
-    dspy.configure(lm=lm)
-    classifier = dspy.ChainOfThought(sig_openai.to_signature())
-    result = classifier(
-        message="Can someone clean conference room B next week?",
-    )
-
-    print("\n--- Result ---")
-    print(result)
-
 
 if __name__ == "__main__":
     main()
