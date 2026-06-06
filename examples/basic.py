@@ -46,35 +46,6 @@ def main() -> None:
     print(f"Inputs:  {list(sig.input_fields.keys())}")
     print(f"Outputs: {list(sig.output_fields.keys())}")
 
-    # 5. Configure the runtime model separately.
-    #    Use a cheaper/faster model for repeated inference.
-    dspy.configure(lm=lm)
-
-    # 6. Use it immediately with any DSPy predictor.
-    classifier = dspy.ChainOfThought(sig.to_signature())
-
-    values = {
-        "message": "My server is on fire and I can't access the dashboard!",
-        "category": "technical",
-        "priority": "P0",
-    }
-    runtime_inputs: dict[str, str] = {}
-    for field_name in sig.input_fields:
-        matching_keys = [
-            key for key in values if field_name == key or field_name.endswith(f"_{key}")
-        ]
-        if not matching_keys:
-            raise RuntimeError(
-                f"No example value configured for generated input {field_name!r}"
-            )
-        runtime_inputs[field_name] = values[matching_keys[0]]
-    result = classifier(**runtime_inputs)
-
-    print("\n--- Result ---")
-    print(result)
-
-    print(dspy.inspect_history())
-
 
 if __name__ == "__main__":
     main()
