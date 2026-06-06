@@ -19,6 +19,12 @@ import dspy
 
 import dspy_auto_signature as das
 
+lm = dspy.LM(
+    model="openrouter/openai/gpt-oss-120b",
+    cache=False,
+    extra_body={"provider": {"order": ["groq"], "allow_fallbacks": False}},
+)
+
 
 def from_dataframe_example() -> None:
     """Generate a signature from a pandas DataFrame (slow path)."""
@@ -28,10 +34,7 @@ def from_dataframe_example() -> None:
         print("pandas not installed. Run: uv sync --extra dataset")
         return
 
-    das.configure(
-        lm=dspy.LM("openrouter/openai/gpt-oss-120b"),
-        sub_lm=dspy.LM("openrouter/openai/gpt-oss-20b"),
-    )
+    das.configure(lm=lm)
 
     df = pd.DataFrame(
         {
@@ -41,7 +44,7 @@ def from_dataframe_example() -> None:
                 "Thanks for fixing the VPN, works perfectly now!",
                 "All login credentials expired overnight.",
             ],
-            "urgency": ["high", "low", "low", "high"],
+            "urgency": ["high", "low", "medium", "high"],
             "sentiment": ["negative", "neutral", "positive", "negative"],
         },
     )
@@ -57,16 +60,13 @@ def from_dataframe_example() -> None:
     print(f"Inputs:    {list(sig.input_fields.keys())}")
     print(f"Outputs:   {list(sig.output_fields.keys())}")
 
-    with open("ticket_signature.py", "w", encoding="utf-8") as f:
+    with open("output/example_dataset_signature.py", "w", encoding="utf-8") as f:
         f.write(sig.to_source())
 
 
 def from_list_example() -> None:
     """Generate a signature from a list of dicts (slow path)."""
-    das.configure(
-        lm=dspy.LM("openrouter/openai/gpt-oss-120b"),
-        sub_lm=dspy.LM("openrouter/openai/gpt-oss-20b"),
-    )
+    das.configure(lm=lm)
 
     rows = [
         {
@@ -81,7 +81,7 @@ def from_list_example() -> None:
         },
         {
             "message": "Thanks for fixing the VPN, works perfectly now!",
-            "urgency": "low",
+            "urgency": "medium",
             "sentiment": "positive",
         },
     ]
@@ -96,6 +96,9 @@ def from_list_example() -> None:
     print(f"Docstring: {sig.__doc__}")
     print(f"Inputs:    {list(sig.input_fields.keys())}")
     print(f"Outputs:   {list(sig.output_fields.keys())}")
+
+    with open("output/example_list_signature.py", "w", encoding="utf-8") as f:
+        f.write(sig.to_source())
 
 
 def main() -> None:
