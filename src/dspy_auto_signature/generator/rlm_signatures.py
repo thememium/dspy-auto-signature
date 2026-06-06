@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 import dspy
 from pydantic import BaseModel, Field
 
@@ -87,7 +85,7 @@ class GenerateSignature(dspy.Signature):
     sample_rows_json: str = dspy.InputField(
         desc="JSON representative dataset rows, or an empty array for prompt sources"
     )
-    draft: Any = dspy.OutputField(
+    draft: ProposedSignature = dspy.OutputField(
         desc="Complete proposed Signature containing name, instructions, inputs, outputs"
     )
 
@@ -169,6 +167,6 @@ class GenerateSDKSignature(dspy.Signature):
     task_hint: str = dspy.InputField(
         desc="Optional additional task context from the user", default=""
     )
-    draft: Any = dspy.OutputField(
+    draft: ProposedSignature = dspy.OutputField(
         desc="Complete proposed Signature containing name, instructions, inputs, outputs"
     )
