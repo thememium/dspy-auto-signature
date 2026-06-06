@@ -1,114 +1,180 @@
-"""Tests for the RLM-based signature generator (no LLM calls)."""
+"""Tests for unified RLM signature generation without LLM calls."""
 
 from __future__ import annotations
 
-import json
+from typing import Any
 
+from dspy_auto_signature.core.signature_builder import SignatureBuilder
 from dspy_auto_signature.generator.rlm_signature_generator import RLMSignatureGenerator
-from dspy_auto_signature.generator.rlm_signatures import ProposeSignatureFromData
+from dspy_auto_signature.generator.rlm_signatures import GenerateSignature
+from dspy_auto_signature.types.signature_spec import ParsedPrompt
 
 
-class TestRLMSignatureGenerator:
-    """Tests for RLMSignatureGenerator helper methods."""
+class TestUnifiedRLMContract:
+    def test_single_signature_has_unified_context_and_draft(self) -> None:
+        assert set(GenerateSignature.input_fields) == {
+            "source_kind",
+            "task_context",
+            "examples_json",
+            "data_profile_json",
+            "sample_rows_json",
+        }
+        assert set(GenerateSignature.output_fields) == {"draft"}
+        assert GenerateSignature.output_fields["draft"].annotation is Any
 
-    def test_parse_spec_json_valid(self) -> None:
-        """A well-formed JSON string is parsed into a dict."""
-        payload = json.dumps(
-            {
-                "name": "TicketClassifier",
-                "instructions": "Classify support tickets.",
-                "inputs": [
-                    {
-                        "name": "message",
-                        "description": "The support ticket text",
-                        "type": "string",
-                    }
-                ],
-                "outputs": [
-                    {
-                        "name": "urgency",
-                        "description": "Urgency level",
-                        "type": "string",
-                    }
-                ],
+    def test_generator_has_one_rlm(self) -> None:
+        generator = RLMSignatureGenerator(max_iterations=5, max_llm_calls=10)
+        assert hasattr(generator, "rlm")
+        assert not hasattr(generator, "prompt_rlm")
+        assert not hasattr(generator, "data_rlm")
+
+
+class TestUnifiedContext:
+    def test_prompt_context_contains_examples(self) -> None:
+        prompt = ParsedPrompt(
+            instruction_text="Summarize the article.",
+            examples=[{"input": "long", "output": "short"}],
+            raw_input="Summarize the article.",
+        )
+        context = RLMSignatureGenerator._build_context(prompt)
+        assert context["source_kind"] == "prompt"
+        assert "long" in context["examples_json"]
+        assert context["data_profile_json"] == "{}"
+
+    def test_dataset_context_contains_profile_and_rows(self) -> None:
+        rows = [{"message": "urgent", "label": "high"}]
+        prompt = ParsedPrompt(
+            instruction_text="Task: Predict label",
+            raw_input=rows,
+        )
+        context = RLMSignatureGenerator._build_context(prompt)
+        assert context["source_kind"] == "dataset"
+        assert '"message"' in context["data_profile_json"]
+        assert '"label": "high"' in context["sample_rows_json"]
+
+    def test_vercel_messages_are_not_treated_as_dataset(self) -> None:
+        messages = [{"role": "system", "content": "Summarize {article}"}]
+        prompt = ParsedPrompt(
+            instruction_text="Summarize {article}", raw_input=messages
+        )
+        assert not RLMSignatureGenerator._is_dataset(prompt)
+
+
+class TestDraftNormalization:
+    def test_complete_draft_becomes_buildable_spec(self) -> None:
+        draft = {
+            "name": "TicketClassifier",
+            "instructions": "Classify support tickets by urgency.",
+            "inputs": [
+                {
+                    "name": "ticket_message",
+                    "description": "Full customer support ticket message",
+                    "type": "string",
+                }
+            ],
+            "outputs": [
+                {
+                    "name": "urgency",
+                    "description": "Predicted urgency level",
+                    "type": "literal low, high",
+                }
+            ],
+        }
+        spec = RLMSignatureGenerator._draft_to_spec(draft)
+        assert spec.name == "TicketClassifier"
+        assert spec.inputs[0].name == "ticket_message"
+        assert spec.outputs[0].suggested_type == "literal low, high"
+        SignatureBuilder.build(spec)
+
+    def test_draft_accepts_aliases_and_repairs_fields(self) -> None:
+        draft = {
+            "name": "ticket classifier!",
+            "doctrine": "Classify support tickets.",
+            "inputs": {"field_name": "Ticket Message", "desc": "Customer request"},
+            "outputs": [
+                '{"name": "class", "description": "Predicted ticket class"}',
+                {"missing": "name"},
+            ],
+        }
+        spec = RLMSignatureGenerator._draft_to_spec(draft)
+        assert spec.name == "TicketClassifier"
+        assert spec.inputs[0].name == "ticket_message"
+        assert spec.outputs[0].name == "class_value"
+        SignatureBuilder.build(spec)
+
+    def test_draft_repairs_input_output_collision(self) -> None:
+        draft = {
+            "name": "ScoreAnswer",
+            "instructions": "Score the answer.",
+            "inputs": [{"name": "score", "description": "Existing score"}],
+            "outputs": [{"name": "score", "description": "Predicted score"}],
+        }
+        spec = RLMSignatureGenerator._draft_to_spec(draft)
+        assert spec.outputs[0].name == "score_result"
+        SignatureBuilder.build(spec)
+
+    def test_bracketed_literal_type_builds_correctly(self) -> None:
+        draft = {
+            "name": "ClassifyUrgency",
+            "instructions": "Classify urgency.",
+            "inputs": [{"name": "message", "description": "Ticket message"}],
+            "outputs": [
+                {
+                    "name": "urgency",
+                    "description": "Predicted urgency",
+                    "type": 'literal ["low", "medium", "high"]',
+                }
+            ],
+        }
+        spec = RLMSignatureGenerator._draft_to_spec(draft)
+        signature = SignatureBuilder.build(spec)
+        annotation = signature.output_fields["urgency"].annotation
+        assert getattr(annotation, "__args__", ()) == (
+            "low",
+            "medium",
+            "high",
+        )
+
+    def test_incomplete_draft_is_rejected_as_one_unit(self) -> None:
+        try:
+            RLMSignatureGenerator._draft_to_spec(
+                {"name": "Incomplete", "instructions": "Do work.", "inputs": []}
+            )
+        except ValueError as exc:
+            assert "incomplete signature draft" in str(exc)
+        else:
+            raise AssertionError("Expected incomplete draft to be rejected")
+
+
+class TestGroundedFallback:
+    def test_dataset_fallback_is_grounded_and_buildable(self) -> None:
+        profile = {
+            "columns": {
+                "message": {"dtype": "text", "n_unique": 100, "null_rate": 0},
+                "urgency": {
+                    "dtype": "categorical",
+                    "n_unique": 2,
+                    "null_rate": 0,
+                    "top_values": [
+                        {"value": "high", "count": 2},
+                        {"value": "low", "count": 2},
+                    ],
+                },
             }
+        }
+        spec = RLMSignatureGenerator._fallback_from_dataset(
+            profile,
+            "Dataset profile\n\nTask: Classify tickets by urgency",
         )
-        result = RLMSignatureGenerator._parse_spec_json(payload)
-        assert result is not None
-        assert result["name"] == "TicketClassifier"
-        assert len(result["inputs"]) == 1
-        assert len(result["outputs"]) == 1
+        assert [field.name for field in spec.inputs] == ["message"]
+        assert [field.name for field in spec.outputs] == ["urgency"]
+        assert spec.outputs[0].suggested_type == "literal high, low"
+        SignatureBuilder.build(spec)
 
-    def test_parse_spec_json_invalid_returns_none(self) -> None:
-        """Garbage input returns None."""
-        assert RLMSignatureGenerator._parse_spec_json("not json at all") is None
-
-    def test_parse_spec_json_embedded_in_text(self) -> None:
-        """JSON embedded in surrounding text is extracted via regex."""
-        payload = json.dumps(
-            {
-                "name": "Foo",
-                "instructions": "Do foo.",
-                "inputs": [{"name": "x", "description": "input x", "type": "string"}],
-                "outputs": [{"name": "y", "description": "output y", "type": "string"}],
-            }
+    def test_prompt_fallback_uses_placeholders_and_task_verb(self) -> None:
+        spec = RLMSignatureGenerator._fallback_from_prompt(
+            "Summarize {article} for {audience}"
         )
-        wrapped = f"Here is the result:\n{payload}\nDone."
-        result = RLMSignatureGenerator._parse_spec_json(wrapped)
-        assert result is not None
-        assert result["name"] == "Foo"
-
-    def test_parse_spec_json_missing_keys(self) -> None:
-        """JSON missing required keys returns None."""
-        payload = json.dumps({"name": "Foo", "instructions": "bar"})
-        assert RLMSignatureGenerator._parse_spec_json(payload) is None
-
-    def test_parse_spec_json_inputs_not_list(self) -> None:
-        """JSON where inputs is not a list returns None."""
-        payload = json.dumps(
-            {
-                "name": "Foo",
-                "instructions": "bar",
-                "inputs": "not a list",
-                "outputs": [],
-            }
-        )
-        assert RLMSignatureGenerator._parse_spec_json(payload) is None
-
-    def test_parse_spec_json_item_missing_fields(self) -> None:
-        """JSON where an input item is missing 'type' returns None."""
-        payload = json.dumps(
-            {
-                "name": "Foo",
-                "instructions": "bar",
-                "inputs": [{"name": "x", "description": "desc"}],  # missing type
-                "outputs": [],
-            }
-        )
-        assert RLMSignatureGenerator._parse_spec_json(payload) is None
-
-    def test_init_accepts_kwargs(self) -> None:
-        """Constructor does not raise with valid keyword arguments."""
-        gen = RLMSignatureGenerator(
-            max_iterations=5, max_llm_calls=10, sub_lm=None, verbose=False
-        )
-        assert gen is not None
-
-
-class TestProposeSignatureFromData:
-    """Tests for the ProposeSignatureFromData DSPy Signature."""
-
-    def test_signature_has_required_fields(self) -> None:
-        """The signature must declare all expected input and output fields."""
-        sig = ProposeSignatureFromData
-        # Input fields
-        assert "data_profile_json" in sig.input_fields
-        assert "sample_rows_json" in sig.input_fields
-        assert "task_hint" in sig.input_fields
-        # Output fields
-        assert "spec_json" in sig.output_fields
-
-    def test_signature_docstring_present(self) -> None:
-        """The signature class must have a meaningful docstring."""
-        assert ProposeSignatureFromData.__doc__ is not None
-        assert "column profiles" in ProposeSignatureFromData.__doc__
+        assert [field.name for field in spec.inputs] == ["article", "audience"]
+        assert [field.name for field in spec.outputs] == ["summary"]
+        SignatureBuilder.build(spec)
