@@ -56,30 +56,78 @@ class TestVercelParser:
         parser = VercelParser()
         assert parser.can_parse([{"role": "user", "content": "hi"}]) is True
         assert parser.can_parse("hello") is False
-        assert parser.can_parse([]) is False  # Empty list should not match
+        assert parser.can_parse([]) is False
         assert parser.can_parse([{"not_role": "x"}]) is False
 
-    def test_parse_simple_messages(self) -> None:
+    def test_system_becomes_instruction(self) -> None:
         parser = VercelParser()
         messages = [
             {"role": "system", "content": "You summarize articles."},
-            {"role": "user", "content": "Please summarize this: {article}"},
+            {"role": "user", "content": "Summarize this article about AI."},
+            {"role": "assistant", "content": "AI is transforming industries."},
         ]
         result = parser.parse(messages)
-        assert "You summarize articles" in result.instruction_text
-        assert "Please summarize this" in result.instruction_text
+        assert result.instruction_text == "You summarize articles."
+        assert len(result.examples) == 1
+        assert result.examples[0]["input"] == "Summarize this article about AI."
+        assert result.examples[0]["output"] == "AI is transforming industries."
 
-    def test_parse_with_assistant(self) -> None:
+    def test_user_assistant_pairs_become_examples(self) -> None:
         parser = VercelParser()
         messages = [
-            {"role": "system", "content": "You are a bot."},
-            {"role": "user", "content": "Question: {question}"},
-            {"role": "assistant", "content": "Answer: {answer}"},
+            {"role": "system", "content": "You are a translator."},
+            {"role": "user", "content": "Translate to French: Hello"},
+            {"role": "assistant", "content": "Bonjour"},
+            {"role": "user", "content": "Translate to French: Goodbye"},
+            {"role": "assistant", "content": "Au revoir"},
         ]
         result = parser.parse(messages)
-        assert "You are a bot" in result.instruction_text
-        # Assistant role should be included as context
-        assert "[assistant]" in result.instruction_text
+        assert result.instruction_text == "You are a translator."
+        assert len(result.examples) == 2
+        assert result.examples[0] == {
+            "input": "Translate to French: Hello",
+            "output": "Bonjour",
+        }
+        assert result.examples[1] == {
+            "input": "Translate to French: Goodbye",
+            "output": "Au revoir",
+        }
+
+    def test_google_gemini_parts_format(self) -> None:
+        parser = VercelParser()
+        messages = [
+            {"role": "user", "parts": [{"text": "Extract entities."}]},
+            {"role": "model", "parts": [{"text": "I'll identify key entities."}]},
+        ]
+        result = parser.parse(messages)
+        assert result.instruction_text == ""
+        assert len(result.examples) == 1
+        assert result.examples[0]["input"] == "Extract entities."
+        assert result.examples[0]["output"] == "I'll identify key entities."
+
+    def test_anthropic_content_blocks(self) -> None:
+        parser = VercelParser()
+        messages = [
+            {"role": "user", "content": [{"type": "text", "text": "Analyze this."}]},
+            {
+                "role": "assistant",
+                "content": [{"type": "text", "text": "Analysis complete."}],
+            },
+        ]
+        result = parser.parse(messages)
+        assert len(result.examples) == 1
+        assert result.examples[0]["input"] == "Analyze this."
+        assert result.examples[0]["output"] == "Analysis complete."
+
+    def test_tool_role_appended_to_instruction(self) -> None:
+        parser = VercelParser()
+        messages = [
+            {"role": "system", "content": "You use tools."},
+            {"role": "tool", "content": "Result: 42"},
+        ]
+        result = parser.parse(messages)
+        assert "You use tools." in result.instruction_text
+        assert "[tool]: Result: 42" in result.instruction_text
 
 
 class TestAutoParser:
