@@ -1,5 +1,69 @@
 # Changelog
 
+## v0.1.2 (2026-06-06)
+
+[Compare changes](https://github.com/thememium/dspy-auto-signature/compare/v0.1.1...v0.1.2)
+
+### 🚀 Enhancements
+
+- add example scripts for auto signature usage ([5fa3c6f](https://github.com/thememium/dspy-auto-signature/commit/5fa3c6fe93d65eec1a59e87a7d1ac1d951d916dd))
+- **parser**: add SDK parser and remove Vercel parser ([ec22b0e](https://github.com/thememium/dspy-auto-signature/commit/ec22b0e32dfcbe141d225e2b9ca9e9166051bc08))
+- **parser**: add parser for SDK chat messages to generate instruction and examples ([7da87fe](https://github.com/thememium/dspy-auto-signature/commit/7da87fecfd160ec70c9bd03b04539d90be970221))
+- **parser**: extend VercelParser to support multi‑SDK chat message formats ([6db36aa](https://github.com/thememium/dspy-auto-signature/commit/6db36aae2e7f231942ae65a5b6946bc8df485ae7))
+- **rlm_signature_generator**: add SDK format support and dedicated RLM ([c90847b](https://github.com/thememium/dspy-auto-signature/commit/c90847bf66247e42b292e5854c5448e4f776d865))
+- **rlm_signatures**: add GenerateSDKSignature for SDK message analysis ([65d89fa](https://github.com/thememium/dspy-auto-signature/commit/65d89fa992e48a5fc6cab0b93e02f30accd799cc))
+- **example**: add example SDK script for dspy-auto-signature ([32dcac7](https://github.com/thememium/dspy-auto-signature/commit/32dcac7164b9833535522f210df47cb7c90d4736))
+
+### 💅 Refactors
+
+- **example**: move example signatures to examples/output directory ([08cd4b2](https://github.com/thememium/dspy-auto-signature/commit/08cd4b2adb771ec10b02041ecc3dcf4d8decfa1a))
+- **examples**: rename example signature output to example_basic_signature.py ([3637332](https://github.com/thememium/dspy-auto-signature/commit/36373324bbcc0e0ecd97a847773eb93e889de920))
+- **dspy_auto_signature**: sanitize SDK spec field names to avoid leaks ([f196900](https://github.com/thememium/dspy-auto-signature/commit/f196900d8f1564b8c9a1dfa567e74da86dd4d40d))
+- **server**: rename VercelParser to SDKParser and update docs ([f61c755](https://github.com/thememium/dspy-auto-signature/commit/f61c7559dd0c5bf159264873da707454119ab6ec))
+- **example_sdk**: adapt example to ticket classification ([c73e7d1](https://github.com/thememium/dspy-auto-signature/commit/c73e7d151f6f4524402dea08d948cf70927d38aa))
+
+### 📖 Documentation
+
+- **README**: quote dspy-auto-signature[pandas] in install instructions ([700bd53](https://github.com/thememium/dspy-auto-signature/commit/700bd53f64e190b70e045507929d253b3c6b0ccf))
+- **README**: add pandas installation instructions ([1157378](https://github.com/thememium/dspy-auto-signature/commit/115737828493f24636f8ea675a3b305c7fc4415f))
+- remove plan.md ([36bf48a](https://github.com/thememium/dspy-auto-signature/commit/36bf48a8f97e4bc1e37be6e614d5846a564223fa))
+- **rlm_signatures**: clarify placeholder semantics in rule 6 ([a0d9f20](https://github.com/thememium/dspy-auto-signature/commit/a0d9f20ba192d0b668beb358d61cc105b5422e2e))
+- **rlm_signatures**: clarify forbidden field names and semantics ([d67bbc0](https://github.com/thememium/dspy-auto-signature/commit/d67bbc0af5bb8372bad50d2b90fb9d47d5f96894))
+- **dspy_auto_signature**: update from_prompt docstring to list SDK message arrays ([87bf75e](https://github.com/thememium/dspy-auto-signature/commit/87bf75e2b15aa8eb24887f7a9723dd34f1437e82))
+- **readme**: add SDK message format section and update source table ([1a30f9f](https://github.com/thememium/dspy-auto-signature/commit/1a30f9f1faec9372089c8cd01b3b37dd7daa4620))
+- add bug report issue template ([da42fcc](https://github.com/thememium/dspy-auto-signature/commit/da42fcc142c725faa10c79abb26b2ae8576fdf22))
+- add CONTRIBUTING guide ([8e479fa](https://github.com/thememium/dspy-auto-signature/commit/8e479fa96bf619acea45692a7f25db166382ba60))
+- add MIT license and SECURITY.md ([424b188](https://github.com/thememium/dspy-auto-signature/commit/424b18869df5e8ddea8b6b7cd9854bd2908d0607))
+- **README**: update examples, usage, and configuration for new API ([08ad1b6](https://github.com/thememium/dspy-auto-signature/commit/08ad1b6cfc0cf6758796669260901360c3fce70c))
+
+### 🏡 Chore
+
+- **pyproject**: add metadata and optional dependencies for packaging ([bad89e2](https://github.com/thememium/dspy-auto-signature/commit/bad89e2aba132cd4460f0b54972c03a221bdc70a))
+- **.gitignore**: ignore output files inside examples folder ([37a70d5](https://github.com/thememium/dspy-auto-signature/commit/37a70d51063355794e1ffcb4b76bcdc926f0511c))
+- add .gitkeep to examples/output to preserve empty directory ([3cb77f8](https://github.com/thememium/dspy-auto-signature/commit/3cb77f80d66c4c8713cd95f7879c81cf260738e4))
+- **.gitignore**: restrict output folder ignore to .py files and keep empty dir ([6152d43](https://github.com/thememium/dspy-auto-signature/commit/6152d43ac17cf551c3252d4d6010d11284a1eea7))
+- **pyproject.toml**: rename example tasks and update paths ([a6fc9b9](https://github.com/thememium/dspy-auto-signature/commit/a6fc9b98e27d3fed87dff698ce8eb68a567943ce))
+
+### ✅ Tests
+
+- **test_smoke**: add smoke test to verify package import and public API ([9edc793](https://github.com/thememium/dspy-auto-signature/commit/9edc793c69456a9627142c4b86f03e25aa5ef416))
+- **parser**: rename VercelParser tests to SDKParser ([e3d2f73](https://github.com/thememium/dspy-auto-signature/commit/e3d2f73abac1cccf69e0e00389d40d755e2f9dc0))
+- **rlm_signature_generator**: add SDK detection, context building and sanitization tests ([4af4960](https://github.com/thememium/dspy-auto-signature/commit/4af4960d1df7788165c8f2fd62f23d48ec16d845))
+- **parsers**: update tests for new VercelParser behavior ([6bc209f](https://github.com/thememium/dspy-auto-signature/commit/6bc209f87241ffa2bd8bb323d4e06c23ff5bc73e))
+- **parser**: add comprehensive unit tests for VercelParser ([306a2f1](https://github.com/thememium/dspy-auto-signature/commit/306a2f1779d0a8e153bde7737ccae77cc747ad1e))
+
+### 🤖 CI
+
+- **publish**: add GitHub Actions workflow to build and publish PyPI package ([46f0da2](https://github.com/thememium/dspy-auto-signature/commit/46f0da287ebd7cdb4ef78a14d05b3646df678ed8))
+
+### Other Changes
+
+- Merge pull request #3 from thememium/eboswell/feat/sdk-parsing-and-generation (#3) ([b0ad19e](https://github.com/thememium/dspy-auto-signature/commit/b0ad19e8c1921a8a84297a72ba497182963b1e64))
+
+### Contributors
+
+- Edward Boswell <thememium@gmail.com>
+
 ## v0.1.1 (2026-06-06)
 
 ### 🚀 Enhancements
