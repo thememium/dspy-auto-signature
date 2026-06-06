@@ -67,16 +67,20 @@ def from_prompt(
 ) -> GeneratedSignature:
     """Generate a DSPy Signature class from an arbitrary prompt.
 
-    Accepts raw strings, Vercel AI SDK message arrays, or any combination.
-    Uses the same unified RLM architect as :func:`from_dataset` to inspect the
-    complete task context and infer fields, types, and instructions.
+    Accepts raw strings, SDK message arrays (OpenAI, Anthropic, Google,
+    LiteLLM), or any combination. Uses the same unified RLM architect as
+    :func:`from_dataset` to inspect the complete task context and infer
+    fields, types, and instructions.
 
     For data-grounded signatures from tabular inputs, use :func:`from_dataset`.
 
     Args:
         prompt: The prompt material. Can be:
             - A raw string (system prompt or task description)
-            - A Vercel AI SDK message array: ``[{"role": "system", "content": "..."}, ...]``
+            - An OpenAI SDK message array: ``[{"role": "system", "content": "..."}, {"role": "user", "content": "..."}]``
+            - An Anthropic SDK message array: ``[{"role": "user", "content": "..."}]``
+            - A Google Gemini SDK contents array: ``[{"role": "user", "parts": [{"text": "..."}]}]``
+            - LiteLLM / Azure OpenAI / Ollama / vLLM message arrays
             - Any combination the parser layer can normalise
         input_hints: Optional mapping of field-name → description for known inputs.
         output_hints: Optional mapping of field-name → description for known outputs.
@@ -92,7 +96,12 @@ def from_prompt(
         >>> import dspy_auto_signature as das
         >>> import dspy
         >>>
-        >>> sig = das.from_prompt("Summarize the following article into 3 bullet points")
+        >>> # From OpenAI SDK messages
+        >>> messages = [
+        ...     {"role": "system", "content": "You summarize articles."},
+        ...     {"role": "user", "content": "Summarize: {article}"},
+        ... ]
+        >>> sig = das.from_prompt(messages)
         >>> summarizer = dspy.ChainOfThought(sig)
         >>> result = summarizer(article="Long text here...")
 
