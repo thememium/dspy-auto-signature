@@ -8,7 +8,7 @@ from dspy_auto_signature.parser.base import PromptParser
 from dspy_auto_signature.types.signature_spec import ParsedPrompt
 
 
-class VercelParser(PromptParser):
+class SDKParser(PromptParser):
     """Parse chat message arrays into instruction text and examples.
 
     Maps SDK roles to signature semantics:
