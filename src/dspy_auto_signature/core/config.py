@@ -34,10 +34,10 @@ class Config:
 
         Args:
             lm: A ``dspy.LM`` instance, or ``None`` to use the global default.
-                Used by the fast path (``from_prompt``) and as the fallback
-                for ``dataset_lm`` and ``sub_lm``.
-            dataset_lm: The outer LM used by the slow path (``from_dataset``)
-                RLM. Falls back to ``lm`` if unset.
+                Used for prompt context and as the fallback for ``dataset_lm``
+                and ``sub_lm``.
+            dataset_lm: Optional outer LM used when the unified RLM receives
+                dataset context. Falls back to ``lm`` if unset.
             sub_lm: The cheap inner LM used by RLM for sub-queries. Falls
                 back to ``lm`` if unset.
 
@@ -70,7 +70,7 @@ class Config:
 
     @classmethod
     def get_dataset_lm(cls) -> dspy.LM:
-        """Return the RLM outer LM for the slow path, falling back to ``get_lm()``."""
+        """Return the outer LM for dataset context, falling back to ``get_lm()``."""
         if cls._dataset_lm is not None:
             return cls._dataset_lm
         return cls.get_lm()
