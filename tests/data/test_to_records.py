@@ -75,3 +75,44 @@ class TestToRecords:
                 return {"x": 1}
 
         assert to_records(Record()) == [{"x": 1}]
+
+    def test_dspy_example_without_todict_uses_to_dict(self) -> None:
+        class Example:  # noqa: naming mirrors dspy.Example for duck typing
+            def __init__(self) -> None:
+                self.x = 1
+
+            def to_dict(self) -> dict[str, int]:
+                return {"x": 1}
+
+        assert to_records(Example()) == [{"x": 1}]
+
+    def test_dspy_example_falls_back_to_vars(self) -> None:
+        class Example:
+            def __init__(self) -> None:
+                self.x = 1
+                self.y = "a"
+
+        assert to_records(Example()) == [{"x": 1, "y": "a"}]
+
+    def test_object_with_collect(self) -> None:
+        class FakeCollected:
+            def to_dicts(self) -> list[dict[str, int]]:
+                return [{"x": 1}, {"x": 2}]
+
+        class FakeLazyFrame:
+            def collect(self) -> FakeCollected:
+                return FakeCollected()
+
+        assert to_records(FakeLazyFrame()) == [{"x": 1}, {"x": 2}]
+
+    def test_object_with_to_pandas(self) -> None:
+        class FakePandasFrame:
+            def to_dict(self, orient: str) -> list[dict[str, int]]:
+                assert orient == "records"
+                return [{"x": 1}, {"x": 2}]
+
+        class FakeHasPandas:
+            def to_pandas(self) -> FakePandasFrame:
+                return FakePandasFrame()
+
+        assert to_records(FakeHasPandas()) == [{"x": 1}, {"x": 2}]
