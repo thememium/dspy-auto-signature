@@ -129,6 +129,38 @@ class TestSDKParser:
         assert "You use tools." in result.instruction_text
         assert "[tool]: Result: 42" in result.instruction_text
 
+    def test_consecutive_user_messages_flush_pending_input(self) -> None:
+        parser = SDKParser()
+        messages = [
+            {"role": "user", "content": "First question"},
+            {"role": "user", "content": "Second question"},
+            {"role": "assistant", "content": "Answer"},
+        ]
+        result = parser.parse(messages)
+        assert result.examples == [
+            {"input": "First question", "output": ""},
+            {"input": "Second question", "output": "Answer"},
+        ]
+
+    def test_assistant_without_preceding_user(self) -> None:
+        parser = SDKParser()
+        result = parser.parse([{"role": "assistant", "content": "Orphan output"}])
+        assert result.examples == [{"input": "", "output": "Orphan output"}]
+
+    def test_trailing_user_message_flushed_with_empty_output(self) -> None:
+        parser = SDKParser()
+        result = parser.parse([{"role": "user", "content": "Unanswered question"}])
+        assert result.examples == [{"input": "Unanswered question", "output": ""}]
+
+    def test_get_content_returns_none_for_unrecognized_payloads(self) -> None:
+        assert SDKParser._get_content({"role": "user", "content": 42}) is None
+        assert (
+            SDKParser._get_content({"role": "user", "content": [{"type": "image"}]})
+            is None
+        )
+        assert SDKParser._get_content({"role": "user", "parts": ["not a dict"]}) is None
+        assert SDKParser().can_parse([{"role": "user", "content": 42}]) is False
+
 
 class TestAutoParser:
     """Tests for AutoParser."""

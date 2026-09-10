@@ -149,3 +149,32 @@ class TestProfiler:
         result = profile_columns(rows)
         col_names = list(result["columns"].keys())
         assert col_names == ["z", "a"]
+
+    def test_mixed_int_float_dtype(self) -> None:
+        rows = [{"v": 1}, {"v": 2.5}, {"v": 3}]
+        result = profile_columns(rows)
+        col = result["columns"]["v"]
+        assert col["dtype"] == "float"
+        assert col["min"] == 1.0
+        assert col["max"] == 3.0
+
+    def test_str_heavy_mixed_categorical(self) -> None:
+        rows = [{"v": v} for v in ["a", "b", "c", 1, 2]]
+        result = profile_columns(rows)
+        col = result["columns"]["v"]
+        assert col["dtype"] == "categorical"
+
+    def test_str_heavy_mixed_text(self) -> None:
+        values = [f"str_{i}" for i in range(51)] + [42]
+        rows = [{"v": v} for v in values]
+        result = profile_columns(rows)
+        col = result["columns"]["v"]
+        assert col["dtype"] == "text"
+
+    def test_categorical_top_values_json_safe_fallback(self) -> None:
+        rows = [{"v": v} for v in ["a", "b", "c", ("x",)]]
+        result = profile_columns(rows)
+        col = result["columns"]["v"]
+        assert col["dtype"] == "categorical"
+        top = {entry["value"]: entry["count"] for entry in col["top_values"]}
+        assert top["('x',)"] == 1

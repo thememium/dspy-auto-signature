@@ -2,14 +2,22 @@
 
 from __future__ import annotations
 
-from typing import cast
+import types
+from typing import IO, Any, Callable, List, Literal, Optional, Union, cast
 
 import dspy
 import pytest
+from pydantic import BaseModel
 from pydantic.fields import FieldInfo
 
-from dspy_auto_signature.core.signature_builder import SignatureBuilder
+from dspy_auto_signature.core.signature_builder import (
+    SignatureBuilder,
+    _collect_imports,
+    _escape_for_docstring,
+    _type_to_str,
+)
 from dspy_auto_signature.types.signature_spec import FieldSpec, FieldType, SignatureSpec
+from dspy_auto_signature.utils.type_resolver import TypeResolver
 
 
 def _get_json_schema_extra(field_info: FieldInfo, key: str) -> object:
@@ -342,3 +350,254 @@ class TestSignatureBuilder:
         assert "class ClassMethodTest(dspy.Signature):" in source
         assert 'query: str = dspy.InputField(desc="Search query")' in source
         assert 'answer: str = dspy.OutputField(desc="The answer")' in source
+
+
+class _CustomModel(BaseModel):
+    """A plain model whose module is not ``builtins`` (for import tests)."""
+
+
+class _FakeField:
+    """Minimal field spec stand-in with an arbitrary resolved type."""
+
+    def __init__(self, resolved_type: object) -> None:
+        self.resolved_type = resolved_type
+
+
+class TestTypeToStr:
+    """Tests for ``_type_to_str`` type rendering."""
+
+    def test_renders_any(self) -> None:
+        assert _type_to_str(Any) == "Any"
+
+    def test_renders_none_type(self) -> None:
+        assert _type_to_str(type(None)) == "None"
+
+    def test_renders_ellipsis(self) -> None:
+        assert _type_to_str(Ellipsis) == "..."
+
+    def test_renders_literal(self) -> None:
+        assert _type_to_str(Literal["a", "b"]) == "Literal['a', 'b']"
+
+    def test_renders_parameterized_generic_alias(self) -> None:
+        assert _type_to_str(list[str]) == "list[str]"
+        assert _type_to_str(dict[str, int]) == "dict[str, int]"
+
+    def test_renders_bare_generic_alias(self) -> None:
+        """A GenericAlias without parameters renders as its origin type."""
+        assert _type_to_str(types.GenericAlias(list, ())) == "list"
+
+    def test_renders_union_type(self) -> None:
+        assert _type_to_str(str | int | None) == "str | int | None"
+
+    def test_renders_typing_generic_alias_with_name(self) -> None:
+        assert _type_to_str(List[int]) == "List[int]"
+
+    def test_renders_typing_optional(self) -> None:
+        """typing.Optional is a typing generic alias: name plus nested args."""
+        assert _type_to_str(Optional[str]) == "Optional[str, None]"
+
+    def test_renders_callable(self) -> None:
+        """typing.Callable has a type origin and no name, so the origin is named."""
+        assert _type_to_str(Callable[[int], str]) == "Callable[int, str]"
+
+    def test_renders_typing_union(self) -> None:
+        """typing.Union has a special-form origin, so repr(origin) is used."""
+        assert _type_to_str(Union[str, int]) == "typing.Union[str, int]"
+
+    def test_renders_typing_alias_with_type_origin_and_no_name(self) -> None:
+        """typing.IO has a type origin but no _name, so the origin's name is used."""
+        assert _type_to_str(IO[str]) == "IO[str]"
+
+    def test_renders_bare_typing_generic_alias(self) -> None:
+        """A typing generic alias without parameters renders as its name."""
+        assert _type_to_str(List) == "List"
+
+    def test_renders_non_type_value_via_repr(self) -> None:
+        """Values that are not types fall back to repr."""
+        assert _type_to_str(42) == "42"
+
+
+class TestCollectImports:
+    """Tests for ``_collect_imports`` import discovery."""
+
+    def test_any_requires_typing_import(self) -> None:
+        fields = [
+            FieldSpec(
+                name="value",
+                description="Any value",
+                suggested_type="any",
+                field_type=FieldType.INPUT,
+            ),
+        ]
+        assert _collect_imports(fields) == {"from typing import Any"}
+
+    def test_literal_requires_typing_import(self) -> None:
+        fields = [
+            FieldSpec(
+                name="level",
+                description="Severity level",
+                suggested_type="one of low, medium, high",
+                field_type=FieldType.INPUT,
+            ),
+        ]
+        assert _collect_imports(fields) == {"from typing import Literal"}
+
+    def test_builtin_type_requires_no_import(self) -> None:
+        fields = [
+            FieldSpec(
+                name="text",
+                description="Some text",
+                suggested_type="string",
+                field_type=FieldType.INPUT,
+            ),
+        ]
+        assert _collect_imports(fields) == set()
+
+    def test_generic_alias_walks_builtin_args(self) -> None:
+        fields = [
+            FieldSpec(
+                name="items",
+                description="Some items",
+                suggested_type="list of strings",
+                field_type=FieldType.INPUT,
+            ),
+        ]
+        assert _collect_imports(fields) == set()
+
+    def test_typing_generic_alias_walks_type_parameters(self) -> None:
+        """typing generic aliases recurse into their type parameters."""
+        imports = _collect_imports(
+            cast("list[FieldSpec]", [_FakeField(Optional[_CustomModel])])
+        )
+        assert imports == {
+            f"from {_CustomModel.__module__} import _CustomModel",
+        }
+
+    def test_typing_generic_alias_with_builtin_args_needs_no_import(self) -> None:
+        imports = _collect_imports(cast("list[FieldSpec]", [_FakeField(Optional[str])]))
+        assert imports == set()
+
+    def test_custom_class_requires_import(self) -> None:
+        """A plain class from a non-builtin module needs an import statement."""
+        imports = _collect_imports(cast("list[FieldSpec]", [_FakeField(_CustomModel)]))
+        assert imports == {f"from {_CustomModel.__module__} import _CustomModel"}
+
+
+class TestEscapeForDocstring:
+    def test_escapes_backslashes_and_triple_quotes(self) -> None:
+        assert _escape_for_docstring('a\\b """ c') == 'a\\\\b \\"\\"\\" c'
+
+
+class TestGenerateSource:
+    def test_multiline_instructions_use_block_docstring(self) -> None:
+        """Instructions with newlines or triple quotes produce a block docstring."""
+        spec = SignatureSpec(
+            name="MultilineSpec",
+            instructions='Step one.\nStep two with """ embedded.\nDone.',
+            inputs=[
+                FieldSpec(
+                    name="text",
+                    description="Input text",
+                    field_type=FieldType.INPUT,
+                ),
+            ],
+            outputs=[
+                FieldSpec(
+                    name="result",
+                    description="The result",
+                    field_type=FieldType.OUTPUT,
+                ),
+            ],
+        )
+
+        source = SignatureBuilder.to_source(spec)
+
+        assert source.count('"""') >= 2
+        assert 'Step two with \\"\\"\\" embedded.' in source
+        compile(source, "<generated>", "exec")
+
+        Sig = SignatureBuilder.build(spec)
+        assert Sig.instructions == spec.instructions
+
+    def test_source_includes_import_for_custom_type(self) -> None:
+        """A field whose type lives in a non-builtin module emits an import."""
+        TypeResolver.register("_CustomModel", _CustomModel)
+        try:
+            spec = SignatureSpec(
+                name="CustomTypeSpec",
+                instructions="Use a custom type.",
+                inputs=[
+                    FieldSpec(
+                        name="model",
+                        description="A custom model",
+                        suggested_type="_CustomModel",
+                        field_type=FieldType.INPUT,
+                    ),
+                ],
+                outputs=[],
+            )
+
+            source = SignatureBuilder.to_source(spec)
+            assert f"from {_CustomModel.__module__} import _CustomModel" in source
+            assert "model: _CustomModel = dspy.InputField" in source
+            compile(source, "<generated>", "exec")
+
+            Sig = SignatureBuilder.build(spec)
+            assert Sig.input_fields["model"].annotation is _CustomModel
+        finally:
+            TypeResolver._ALIASES.pop("_custommodel", None)
+
+
+class TestMakeFieldTuple:
+    def test_constraints_forwarded_to_field_factory(self) -> None:
+        """A field with constraints passes them via json_schema_extra to the factory."""
+        field_spec = FieldSpec(
+            name="score",
+            description="Score between 0 and 1",
+            field_type=FieldType.INPUT,
+            constraints="between 0 and 1",
+        )
+        captured: dict[str, object] = {}
+
+        def recording_factory(**kwargs: object) -> FieldInfo:
+            captured.update(kwargs)
+            return FieldInfo()
+
+        resolved, _ = SignatureBuilder._make_field_tuple(field_spec, recording_factory)
+
+        assert resolved is str
+        assert captured["json_schema_extra"] == {"constraints": "between 0 and 1"}
+
+    def test_without_constraints_omits_json_schema_extra(self) -> None:
+        field_spec = FieldSpec(
+            name="score",
+            description="Score between 0 and 1",
+            field_type=FieldType.INPUT,
+        )
+        captured: dict[str, object] = {}
+
+        def recording_factory(**kwargs: object) -> FieldInfo:
+            captured.update(kwargs)
+            return FieldInfo()
+
+        _, info = SignatureBuilder._make_field_tuple(field_spec, recording_factory)
+
+        assert "json_schema_extra" not in captured
+        assert captured["desc"] == "Score between 0 and 1"
+        assert captured["description"] == "Score between 0 and 1"
+
+    def test_with_real_dspy_field_factory(self) -> None:
+        """The tuple works end-to-end with dspy's real field factories."""
+        field_spec = FieldSpec(
+            name="score",
+            description="Score between 0 and 1",
+            field_type=FieldType.OUTPUT,
+        )
+
+        resolved, info = SignatureBuilder._make_field_tuple(
+            field_spec, dspy.OutputField
+        )
+
+        assert resolved is str
+        assert isinstance(info, FieldInfo)
+        assert info.description == "Score between 0 and 1"

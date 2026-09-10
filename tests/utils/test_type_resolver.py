@@ -216,3 +216,46 @@ class TestTypeResolver:
         TypeResolver.register_pydantic_model(MemoryOperation)
         assert TypeResolver.resolve("MemoryOperation") is MemoryOperation
         assert TypeResolver.resolve("memoryoperation") is MemoryOperation
+
+    # --- Variadic tuples (Python-style) ---
+
+    def test_python_style_variadic_tuple(self) -> None:
+        resolved = TypeResolver.resolve("tuple[int, ...]")
+        origin = getattr(resolved, "__origin__", None)
+        args: tuple = getattr(resolved, "__args__", ())
+        assert origin is tuple
+        assert args[0] is int
+        assert args[1] is Ellipsis
+
+    # --- Nullable prefix ---
+
+    @pytest.mark.parametrize(
+        ("description", "expected"),
+        [
+            ("nullable string", str | None),
+            ("nullable integer", int | None),
+        ],
+    )
+    def test_nullable_prefix(self, description: str, expected: object) -> None:
+        assert TypeResolver.resolve(description) == expected
+
+    # --- Nested generic arguments ---
+
+    def test_python_style_nested_generic(self) -> None:
+        resolved = TypeResolver.resolve("dict[str, list[int]]")
+        origin = getattr(resolved, "__origin__", None)
+        args: tuple = getattr(resolved, "__args__", ())
+        assert origin is dict
+        assert args[0] is str
+        inner = args[1]
+        assert getattr(inner, "__origin__", None) is list
+        inner_args: tuple = getattr(inner, "__args__", ())
+        assert inner_args[0] is int
+
+    # --- Literal fallback for unparseable bracketed lists ---
+
+    def test_literal_bracketed_falls_back_to_comma_split(self) -> None:
+        """Bracketed values that are neither JSON nor Python literals still parse."""
+        resolved = TypeResolver.resolve("literal [not valid, syntax]")
+        args = getattr(resolved, "__args__", ())
+        assert args == ("not valid", "syntax")
