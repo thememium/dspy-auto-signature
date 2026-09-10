@@ -45,6 +45,7 @@ dev = [
   "ty>=0.0.39",
   "usechange>=0.1.35",
   "pandas>=2.0",
+  "pytest-cov>=7.1.0",
 ]
 
 [tool.pytest.ini_options]
@@ -64,6 +65,7 @@ example-sdk = "uv run ./examples/sdk.py"
 clean-full = "sh -c 'uv run isort . && uv run ruff check . --fix && uv run ruff format . && uv run deptry . && uv run ty check'"
 clean = "sh -c 'uv run isort . && uv run ruff format .'"
 test = "uv run pytest tests/ -v"
+test-cov = "uv run pytest tests/ -v --cov=dspy_auto_signature --cov-report=term-missing"
 sort = "uv run isort ."
 lint = "uv run ruff check ."
 format = "uv run ruff format ."
