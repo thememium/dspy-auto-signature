@@ -1,8 +1,9 @@
 """Tests for the SignatureBuilder."""
 
 from __future__ import annotations
+
 import types
-from typing import Any, List, Literal, Optional, cast
+from typing import IO, Any, Callable, List, Literal, Optional, Union, cast
 
 import dspy
 import pytest
@@ -395,6 +396,18 @@ class TestTypeToStr:
         """typing.Optional is a typing generic alias: name plus nested args."""
         assert _type_to_str(Optional[str]) == "Optional[str, None]"
 
+    def test_renders_callable(self) -> None:
+        """typing.Callable has a type origin and no name, so the origin is named."""
+        assert _type_to_str(Callable[[int], str]) == "Callable[int, str]"
+
+    def test_renders_typing_union(self) -> None:
+        """typing.Union has a special-form origin, so repr(origin) is used."""
+        assert _type_to_str(Union[str, int]) == "typing.Union[str, int]"
+
+    def test_renders_typing_alias_with_type_origin_and_no_name(self) -> None:
+        """typing.IO has a type origin but no _name, so the origin's name is used."""
+        assert _type_to_str(IO[str]) == "IO[str]"
+
     def test_renders_bare_typing_generic_alias(self) -> None:
         """A typing generic alias without parameters renders as its name."""
         assert _type_to_str(List) == "List"
@@ -453,18 +466,20 @@ class TestCollectImports:
 
     def test_typing_generic_alias_walks_type_parameters(self) -> None:
         """typing generic aliases recurse into their type parameters."""
-        imports = _collect_imports([_FakeField(Optional[_CustomModel])])
+        imports = _collect_imports(
+            cast("list[FieldSpec]", [_FakeField(Optional[_CustomModel])])
+        )
         assert imports == {
             f"from {_CustomModel.__module__} import _CustomModel",
         }
 
     def test_typing_generic_alias_with_builtin_args_needs_no_import(self) -> None:
-        imports = _collect_imports([_FakeField(Optional[str])])
+        imports = _collect_imports(cast("list[FieldSpec]", [_FakeField(Optional[str])]))
         assert imports == set()
 
     def test_custom_class_requires_import(self) -> None:
         """A plain class from a non-builtin module needs an import statement."""
-        imports = _collect_imports([_FakeField(_CustomModel)])
+        imports = _collect_imports(cast("list[FieldSpec]", [_FakeField(_CustomModel)]))
         assert imports == {f"from {_CustomModel.__module__} import _CustomModel"}
 
 
@@ -524,7 +539,7 @@ class TestGenerateSource:
 
             source = SignatureBuilder.to_source(spec)
             assert f"from {_CustomModel.__module__} import _CustomModel" in source
-            assert f"model: _CustomModel = dspy.InputField" in source
+            assert "model: _CustomModel = dspy.InputField" in source
             compile(source, "<generated>", "exec")
 
             Sig = SignatureBuilder.build(spec)
@@ -579,7 +594,9 @@ class TestMakeFieldTuple:
             field_type=FieldType.OUTPUT,
         )
 
-        resolved, info = SignatureBuilder._make_field_tuple(field_spec, dspy.OutputField)
+        resolved, info = SignatureBuilder._make_field_tuple(
+            field_spec, dspy.OutputField
+        )
 
         assert resolved is str
         assert isinstance(info, FieldInfo)

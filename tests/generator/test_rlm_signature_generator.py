@@ -634,16 +634,21 @@ class TestFallbackFromContext:
                 "message": {"dtype": "text", "n_unique": 100, "null_rate": 0},
                 "urgency": {"dtype": "categorical", "n_unique": 2, "null_rate": 0},
             }
-    def test_empty_profile_falls_back_to_prompt(self) -> None:
-        spec = RLMSignatureGenerator._fallback_from_dataset({}, "Classify things")
-        assert [field.name for field in spec.inputs] == ["source_content"]
-        assert [field.name for field in spec.outputs] == ["classification"]
-        SignatureBuilder.build(spec)
+        }
+        context = {
+            "source_kind": "dataset",
+            "task_context": "Classify tickets by urgency",
             "data_profile_json": json.dumps(profile),
         }
         spec = RLMSignatureGenerator._fallback_from_context(context)
         assert [field.name for field in spec.inputs] == ["message"]
         assert [field.name for field in spec.outputs] == ["urgency"]
+
+    def test_empty_profile_falls_back_to_prompt(self) -> None:
+        spec = RLMSignatureGenerator._fallback_from_dataset({}, "Classify things")
+        assert [field.name for field in spec.inputs] == ["source_content"]
+        assert [field.name for field in spec.outputs] == ["classification"]
+        SignatureBuilder.build(spec)
 
     def test_prompt_context_routes_to_prompt_fallback(self) -> None:
         context = {
@@ -653,11 +658,6 @@ class TestFallbackFromContext:
         spec = RLMSignatureGenerator._fallback_from_context(context)
         assert [field.name for field in spec.inputs] == ["article"]
         assert [field.name for field in spec.outputs] == ["summary"]
-
-    def test_empty_profile_falls_back_to_prompt(self) -> None:
-        spec = RLMSignatureGenerator._fallback_from_dataset({}, "Classify things")
-        assert [field.name for field in spec.inputs] == ["things"]
-        SignatureBuilder.build(spec)
 
 
 class TestDatasetFallbackTargetSelection:
@@ -689,7 +689,7 @@ class TestDatasetFallbackTargetSelection:
             }
         }
         spec = RLMSignatureGenerator._fallback_from_dataset(
-            profile, "Predict message and label"
+            profile, "Dataset profile\n\nTask: Predict message and label"
         )
         assert [field.name for field in spec.inputs] == ["message"]
         assert [field.name for field in spec.outputs] == ["label"]

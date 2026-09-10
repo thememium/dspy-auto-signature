@@ -249,7 +249,8 @@ class TestTypeResolver:
         assert args[0] is str
         inner = args[1]
         assert getattr(inner, "__origin__", None) is list
-        assert getattr(inner, "__args__", ())[0] is int
+        inner_args: tuple = getattr(inner, "__args__", ())
+        assert inner_args[0] is int
 
     # --- Literal fallback for unparseable bracketed lists ---
 

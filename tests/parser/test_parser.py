@@ -155,7 +155,8 @@ class TestSDKParser:
     def test_get_content_returns_none_for_unrecognized_payloads(self) -> None:
         assert SDKParser._get_content({"role": "user", "content": 42}) is None
         assert (
-            SDKParser._get_content({"role": "user", "content": [{"type": "image"}]}) is None
+            SDKParser._get_content({"role": "user", "content": [{"type": "image"}]})
+            is None
         )
         assert SDKParser._get_content({"role": "user", "parts": ["not a dict"]}) is None
         assert SDKParser().can_parse([{"role": "user", "content": 42}]) is False

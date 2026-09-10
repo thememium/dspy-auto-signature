@@ -77,7 +77,7 @@ class TestToRecords:
         assert to_records(Record()) == [{"x": 1}]
 
     def test_dspy_example_without_todict_uses_to_dict(self) -> None:
-        class Example:  # noqa: naming mirrors dspy.Example for duck typing
+        class Example:
             def __init__(self) -> None:
                 self.x = 1
 

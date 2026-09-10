@@ -41,7 +41,9 @@ class TestDataFrameParserCanParse:
         df = pd.DataFrame({"question": ["What is AI?"], "answer": ["Smart robots"]})
         assert DataFrameParser().can_parse(df) is True
 
-    def test_can_parse_survives_missing_pandas(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_can_parse_survives_missing_pandas(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         monkeypatch.setitem(sys.modules, "pandas", None)
         parser = DataFrameParser()
         assert parser.can_parse([{"a": 1}]) is True
@@ -68,11 +70,17 @@ class TestDataFrameParserCanParse:
     def test_cannot_parse_plain_string(self) -> None:
         assert DataFrameParser().can_parse("just text") is False
 
+
 class TestDataFrameParserParse:
     def test_parse_plain_dict(self) -> None:
-        result = DataFrameParser().parse({"question": ["What is AI?"], "answer": ["Robots"]})
+        result = DataFrameParser().parse(
+            {"question": ["What is AI?"], "answer": ["Robots"]}
+        )
         assert result.source_kind == "dataset"
-        assert result.examples[0] == {"question": "['What is AI?']", "answer": "['Robots']"}
+        assert result.examples[0] == {
+            "question": "['What is AI?']",
+            "answer": "['Robots']",
+        }
         assert result.data_profile is not None
         assert result.data_profile["n_cols"] == 2
 
@@ -86,7 +94,9 @@ class TestDataFrameParserParse:
         assert result.examples[0]["a"] == "null"
 
     def test_instruction_lists_column_profiles(self) -> None:
-        result = DataFrameParser().parse({"question": ["What is AI?"], "answer": ["Robots"]})
+        result = DataFrameParser().parse(
+            {"question": ["What is AI?"], "answer": ["Robots"]}
+        )
         assert "Dataset with 1 rows and 2 columns." in result.instruction_text
         assert "Column profiles:" in result.instruction_text
         assert "question" in result.instruction_text

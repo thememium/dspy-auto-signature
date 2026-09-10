@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from typing import cast
+
 import dspy
 import pytest
 
@@ -16,7 +19,7 @@ from dspy_auto_signature.types.signature_spec import (
 
 
 @pytest.fixture(autouse=True)
-def _isolated_config() -> None:
+def _isolated_config() -> Iterator[None]:
     """Keep package-level Config state out of the global test process."""
     Config.reset()
     yield
@@ -101,7 +104,7 @@ class TestGeneratePipeline:
         assert created[0].sub_lm is lm
         assert created[0].parsed is not None
         assert "Summarize articles" in created[0].parsed.instruction_text
-        assert issubclass(sig, dspy.Signature)
+        assert issubclass(cast("type", sig), dspy.Signature)
         assert "article" in sig.input_fields
         assert "summary" in sig.output_fields
 
@@ -130,7 +133,7 @@ class TestGeneratePipeline:
         assert gen.parsed.instruction_text.endswith(
             "\n\nTask: Classify support tickets"
         )
-        assert issubclass(sig, dspy.Signature)
+        assert issubclass(cast("type", sig), dspy.Signature)
 
 
 class TestApplyHints:
