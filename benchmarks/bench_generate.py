@@ -8,7 +8,8 @@ adapters expect, so the benchmark measures the real orchestration overhead
 with zero network. Emitted metrics:
 
 - METRIC generate_ms            median per-workload median wall time (primary)
-- METRIC bench_<workload>_ms    per-workload median wall time
+- METRIC bench_prompt_fast_ms   plain prompt with mode="fast" (deterministic fallback)
+- METRIC bench_cold_start_ms    first generate() in the process (one-time sandbox costs)
 - METRIC llm_calls              mean canned-LLM calls per generation (0 = fast path)
 """
 
@@ -138,8 +139,11 @@ def main() -> int:
     Config.reset()
     das.configure(lm=lm, sub_lm=lm)
 
-    # Warmup: imports, Pyodide compile cache, adapters.
+    # Cold start: the first generate() pays one-time costs (imports, sandbox
+    # spawn, Pyodide compile cache, adapters). Timed and reported separately.
+    t0 = time.perf_counter()
     warm = das.generate(workloads()[0][1])  # type: ignore[arg-type]
+    cold_start_ms = (time.perf_counter() - t0) * 1000.0
     assert warm is not None
 
     per_workload_ms: dict[str, float] = {}
@@ -172,9 +176,12 @@ def main() -> int:
     per_workload_ms["bench_prompt_fast_ms"] = statistics.median(fast_walls)
 
     primary = statistics.median(
-        value for key, value in per_workload_ms.items() if key != "bench_prompt_fast_ms"
+        value
+        for key, value in per_workload_ms.items()
+        if key not in ("bench_prompt_fast_ms", "bench_cold_start_ms")
     )
     print(f"METRIC generate_ms={primary:.2f}")
+    print(f"METRIC bench_cold_start_ms={cold_start_ms:.2f}")
     for key, value in sorted(per_workload_ms.items()):
         print(f"METRIC {key}={value:.2f}")
     print(f"METRIC llm_calls={statistics.mean(calls_per_gen):.2f}")
