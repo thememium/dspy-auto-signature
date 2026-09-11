@@ -208,6 +208,11 @@ class RLMSignatureGenerator(dspy.Module):
         instructions = "\n\n".join(
             part for part in (*system_parts, *context_parts, *user_parts) if part
         )
+        task_hint = cls._extract_task_hint(prompt.instruction_text)
+        if task_hint:
+            instructions = (
+                f"{instructions}\n\nTask: {task_hint}" if instructions else task_hint
+            )
 
         inputs = cls._inputs_from_user(user_parts)
         outputs = cls._outputs_from_assistant(assistant_parts)

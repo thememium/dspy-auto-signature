@@ -543,6 +543,26 @@ class TestStructuralFastPath:
 
         assert stub.calls == 0
         assert [field.name for field in spec.inputs] == ["article", "audience"]
+
+    def test_sdk_structural_spec_preserves_task_hint(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(Config, "_lm", dspy.LM("openai/gpt-4o"))
+        generator = RLMSignatureGenerator()
+        stub = _StubRLM(_COMPLETE_DRAFT)
+        generator.sdk_rlm = stub  # type: ignore[assignment]
+        prompt = ParsedPrompt(
+            instruction_text="Write a README.\n\nTask: Target markdown output",
+            raw_input=[
+                {"role": "system", "content": "You are a technical writer."},
+                {"role": "user", "content": "Write a README."},
+            ],
+        )
+
+        spec = generator.forward(prompt)
+
+        assert stub.calls == 0
+        assert "Task: Target markdown output" in spec.instructions
         SignatureBuilder.build(spec)
 
 
