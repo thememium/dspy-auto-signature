@@ -718,18 +718,6 @@ class TestForwardPromptPath:
         assert [field.name for field in spec.inputs] == ["article"]
         assert [field.name for field in spec.outputs] == ["summary"]
         SignatureBuilder.build(spec)
-        generator.rlm = stub  # type: ignore[assignment]
-        prompt = ParsedPrompt(
-            instruction_text="Summarize the article.",
-            raw_input="Summarize the article.",
-        )
-
-        spec = generator.forward(prompt)
-
-        assert stub.kwargs["source_kind"] == "prompt"
-        assert spec.name == "ArticleSummarizer"
-        assert [field.name for field in spec.inputs] == ["article"]
-        SignatureBuilder.build(spec)
 
     def test_forward_dataset_source_is_deterministic(
         self, monkeypatch: pytest.MonkeyPatch
@@ -747,6 +735,24 @@ class TestForwardPromptPath:
         assert stub.calls == 0
         assert [field.name for field in spec.inputs] == ["message"]
         assert [field.name for field in spec.outputs] == ["label"]
+        SignatureBuilder.build(spec)
+
+    def test_rlm_mode_forces_rlm_on_dataset(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(Config, "_dataset_lm", dspy.LM("openai/gpt-4o"))
+        generator = RLMSignatureGenerator()
+        stub = _StubRLM(_COMPLETE_DRAFT)
+        generator.rlm = stub  # type: ignore[assignment]
+        prompt = ParsedPrompt(
+            instruction_text="Predict label", raw_input=[{"message": "x", "label": "y"}]
+        )
+
+        spec = generator.forward(prompt, mode="rlm")
+
+        assert stub.calls == 1
+        assert stub.kwargs["source_kind"] == "dataset"
+        assert spec.name == "ArticleSummarizer"
         SignatureBuilder.build(spec)
 
     def test_forward_falls_back_when_rlm_fails(
