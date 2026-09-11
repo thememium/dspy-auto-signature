@@ -24,6 +24,8 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+_PLACEHOLDER_PATTERN = re.compile(r"\{([a-zA-Z_][a-zA-Z0-9_]*)\}")
+
 
 class RLMSignatureGenerator(dspy.Module):
     """Generate a ``SignatureSpec`` through one recursive analysis workflow."""
@@ -52,17 +54,25 @@ class RLMSignatureGenerator(dspy.Module):
         )
 
     def forward(self, prompt: ParsedPrompt) -> SignatureSpec:
-        """Build unified context, run one RLM, and normalize its complete draft."""
+        """Prefer deterministic structure; run the RLM only when structure is thin."""
         if self._is_sdk_format(prompt):
+            spec = self._structural_sdk_spec(prompt)
+            if spec is not None:
+                return spec
             return self._forward_sdk(prompt)
 
         context = self._build_context(prompt)
-        lm = (
-            Config.get_dataset_lm()
-            if context["source_kind"] == "dataset"
-            else Config.get_lm()
-        )
+        if context["source_kind"] == "dataset":
+            profile = json.loads(context["data_profile_json"])
+            try:
+                return self._fallback_from_dataset(profile, context["task_context"])
+            except Exception as exc:
+                logger.warning("Dataset structural generation failed: %s", exc)
 
+        if _PLACEHOLDER_PATTERN.search(context["task_context"]):
+            return self._fallback_from_prompt(context["task_context"])
+
+        lm = Config.get_lm()
         try:
             with dspy.settings.context(lm=lm):
                 result = self.rlm(**context)
@@ -89,6 +99,225 @@ class RLMSignatureGenerator(dspy.Module):
                 exc,
             )
             return self._fallback_from_context(self._build_context(prompt))
+
+    _SDK_USER_ROLES = frozenset({"user"})
+    _SDK_SYSTEM_ROLES = frozenset({"system", "developer"})
+    _SDK_ASSISTANT_ROLES = frozenset({"assistant", "model"})
+    _SDK_CONTEXT_ROLES = frozenset({"tool", "function"})
+    _NAME_STOPWORDS = frozenset(
+        {
+            "the",
+            "and",
+            "for",
+            "with",
+            "you",
+            "your",
+            "that",
+            "this",
+            "from",
+            "into",
+            "then",
+            "when",
+            "what",
+            "which",
+            "are",
+            "was",
+            "were",
+            "have",
+            "has",
+            "will",
+            "would",
+            "should",
+            "them",
+            "their",
+            "about",
+            "after",
+            "before",
+            "each",
+            "user",
+            "message",
+            "please",
+            "can",
+            "could",
+        }
+    )
+
+    @classmethod
+    def _structural_sdk_spec(cls, prompt: ParsedPrompt) -> SignatureSpec | None:
+        """Build a ``SignatureSpec`` deterministically from SDK message structure.
+
+        Returns ``None`` when the structure is too thin (no user message) and the
+        RLM should take over. System/developer messages become instructions, user
+        message structure (placeholders, JSON objects) becomes inputs, and
+        assistant/model message structure (JSON objects) becomes typed outputs.
+        """
+        raw = prompt.raw_input
+        messages: list[dict[str, Any]] = raw if isinstance(raw, list) else []
+
+        system_parts: list[str] = []
+        user_parts: list[str] = []
+        assistant_parts: list[str] = []
+        context_parts: list[str] = []
+        for msg in messages:
+            content = cls._message_text(msg)
+            if not content:
+                continue
+            role = str(msg.get("role", "")).lower()
+            if role in cls._SDK_SYSTEM_ROLES:
+                system_parts.append(content)
+            elif role in cls._SDK_USER_ROLES:
+                user_parts.append(content)
+            elif role in cls._SDK_ASSISTANT_ROLES:
+                assistant_parts.append(content)
+            elif role in cls._SDK_CONTEXT_ROLES:
+                context_parts.append(content)
+
+        if not user_parts:
+            return None
+
+        instructions = "\n\n".join(
+            part for part in (*system_parts, *context_parts, *user_parts) if part
+        )
+
+        inputs = cls._inputs_from_user(user_parts)
+        outputs = cls._outputs_from_assistant(assistant_parts)
+        name = cls._sdk_class_name(user_parts[0], outputs)
+
+        used = {field.name for field in inputs}
+        outputs = [
+            FieldSpec(
+                name=cls._unique_name(field.name, used),
+                description=field.description,
+                suggested_type=field.suggested_type,
+                field_type=FieldType.OUTPUT,
+            )
+            for field in outputs
+        ]
+        return SignatureSpec(
+            name=name,
+            instructions=instructions,
+            inputs=inputs,
+            outputs=outputs,
+        )
+
+    @staticmethod
+    def _message_text(msg: dict[str, Any]) -> str:
+        """Extract text from one SDK message, mirroring ``SDKParser`` semantics."""
+        from dspy_auto_signature.parser.sdk_parser import SDKParser
+
+        return SDKParser._get_content(msg) or ""
+
+    @classmethod
+    def _inputs_from_user(cls, user_parts: list[str]) -> list[FieldSpec]:
+        """Derive inputs from user-message structure: placeholders, JSON, or the message itself."""
+        names: list[str] = []
+        for part in user_parts:
+            names.extend(_PLACEHOLDER_PATTERN.findall(part))
+        if names:
+            used: set[str] = set()
+            inputs: list[FieldSpec] = []
+            for raw_name in names:
+                name = cls._unique_name(cls._normalize_field_name(raw_name), used)
+                used.add(name)
+                inputs.append(
+                    FieldSpec(
+                        name=name,
+                        description=f"The {raw_name.replace('_', ' ')} provided for the task",
+                        suggested_type="string",
+                        field_type=FieldType.INPUT,
+                    ),
+                )
+            return inputs
+
+        for part in user_parts:
+            obj = cls._json_object(part)
+            if obj:
+                return [
+                    FieldSpec(
+                        name=cls._normalize_field_name(key),
+                        description=f"The {key.replace('_', ' ')} value from the request payload",
+                        suggested_type=cls._infer_value_type(value),
+                        field_type=FieldType.INPUT,
+                    )
+                    for key, value in obj.items()
+                ]
+
+        return [
+            FieldSpec(
+                name="message",
+                description="The user's initial message containing the task request",
+                suggested_type="string",
+                field_type=FieldType.INPUT,
+            ),
+        ]
+
+    @classmethod
+    def _outputs_from_assistant(cls, assistant_parts: list[str]) -> list[FieldSpec]:
+        """Derive typed outputs from assistant-message structure."""
+        for part in assistant_parts:
+            obj = cls._json_object(part)
+            if obj:
+                return [
+                    FieldSpec(
+                        name=cls._normalize_field_name(key),
+                        description=f"The {key.replace('_', ' ')} value in the response",
+                        suggested_type=cls._infer_value_type(value),
+                        field_type=FieldType.OUTPUT,
+                    )
+                    for key, value in obj.items()
+                ]
+        return [
+            FieldSpec(
+                name="response",
+                description="The model's response to the user's request",
+                suggested_type="string",
+                field_type=FieldType.OUTPUT,
+            ),
+        ]
+
+    @staticmethod
+    def _json_object(text: str) -> dict[str, Any] | None:
+        """Return the decoded JSON object in *text*, ignoring code fences."""
+        stripped = text.strip()
+        if stripped.startswith("```"):
+            lines = stripped.splitlines()
+            stripped = "\n".join(lines[1:-1] if len(lines) > 2 else lines[1:])
+        try:
+            value = json.loads(stripped)
+        except json.JSONDecodeError:
+            return None
+        return value if isinstance(value, dict) and value else None
+
+    @staticmethod
+    def _infer_value_type(value: Any) -> str:
+        """Map a parsed JSON value to a natural-language type hint."""
+        if isinstance(value, bool):
+            return "boolean"
+        if isinstance(value, int):
+            return "integer"
+        if isinstance(value, float):
+            return "float"
+        if isinstance(value, list):
+            return "list of strings"
+        return "string"
+
+    @classmethod
+    def _sdk_class_name(
+        cls,
+        user_text: str,
+        outputs: list[FieldSpec],
+    ) -> str:
+        """Derive a specific PascalCase class name from the task's leading keywords."""
+        words = [
+            word
+            for word in re.findall(r"[a-zA-Z]{3,}", user_text)
+            if word.lower() not in cls._NAME_STOPWORDS
+        ][:4]
+        if not words and outputs:
+            words = outputs[0].name.split("_")
+        if not words:
+            return "TaskSignature"
+        return cls._normalize_class_name(" ".join(words))
 
     @staticmethod
     def _is_sdk_format(prompt: ParsedPrompt) -> bool:
