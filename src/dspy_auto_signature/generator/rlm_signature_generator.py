@@ -108,12 +108,19 @@ class RLMSignatureGenerator(dspy.Module):
             interpreter=interpreter,
         )
 
-    def forward(self, prompt: ParsedPrompt) -> SignatureSpec:
-        """Prefer deterministic structure; run the RLM only when structure is thin."""
+    def forward(self, prompt: ParsedPrompt, *, fast: bool = False) -> SignatureSpec:
+        """Prefer deterministic structure; run the RLM only when structure is thin.
+
+        With ``fast=True``, structureless plain prompts also skip the RLM and
+        receive the deterministic prompt fallback (inferred input/output names)
+        instead of the richer RLM-designed signature.
+        """
         if self._is_sdk_format(prompt):
             spec = self._structural_sdk_spec(prompt)
             if spec is not None:
                 return spec
+            if fast:
+                return self._fallback_from_context(self._build_context(prompt))
             return self._forward_sdk(prompt)
 
         context = self._build_context(prompt)
@@ -124,7 +131,7 @@ class RLMSignatureGenerator(dspy.Module):
             except Exception as exc:
                 logger.warning("Dataset structural generation failed: %s", exc)
 
-        if _PLACEHOLDER_PATTERN.search(context["task_context"]):
+        if fast or _PLACEHOLDER_PATTERN.search(context["task_context"]):
             return self._fallback_from_prompt(context["task_context"])
 
         lm = Config.get_lm()

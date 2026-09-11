@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from types import SimpleNamespace
-from typing import Any, cast
+from typing import Any
 
 import dspy
 import pytest
@@ -664,6 +664,37 @@ class TestForwardPromptPath:
         monkeypatch.setattr(Config, "_lm", dspy.LM("openai/gpt-4o"))
         generator = RLMSignatureGenerator()
         stub = _StubRLM(_COMPLETE_DRAFT)
+        generator.rlm = stub  # type: ignore[assignment]
+        prompt = ParsedPrompt(
+            instruction_text="Summarize the article.",
+            raw_input="Summarize the article.",
+        )
+
+        spec = generator.forward(prompt)
+
+        assert stub.kwargs["source_kind"] == "prompt"
+        assert spec.name == "ArticleSummarizer"
+        assert [field.name for field in spec.inputs] == ["article"]
+        SignatureBuilder.build(spec)
+
+    def test_fast_mode_plain_prompt_bypasses_rlm(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(Config, "_lm", dspy.LM("openai/gpt-4o"))
+        generator = RLMSignatureGenerator()
+        stub = _StubRLM(_COMPLETE_DRAFT)
+        generator.rlm = stub  # type: ignore[assignment]
+        prompt = ParsedPrompt(
+            instruction_text="Given an article, produce a concise summary.",
+            raw_input="Given an article, produce a concise summary.",
+        )
+
+        spec = generator.forward(prompt, fast=True)
+
+        assert stub.calls == 0
+        assert [field.name for field in spec.inputs] == ["article"]
+        assert [field.name for field in spec.outputs] == ["summary"]
+        SignatureBuilder.build(spec)
         generator.rlm = stub  # type: ignore[assignment]
         prompt = ParsedPrompt(
             instruction_text="Summarize the article.",

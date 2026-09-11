@@ -161,7 +161,19 @@ def main() -> int:
         per_workload_ms[f"bench_{key}_ms"] = statistics.median(walls)
         calls_per_gen.append(statistics.mean(calls))
 
-    primary = statistics.median(per_workload_ms.values())
+    plain_prompt = (
+        "Given an article, produce a concise summary and three key takeaways."
+    )
+    fast_walls: list[float] = []
+    for _ in range(REPS):
+        t0 = time.perf_counter()
+        das.generate(plain_prompt, mode="fast")
+        fast_walls.append((time.perf_counter() - t0) * 1000.0)
+    per_workload_ms["bench_prompt_fast_ms"] = statistics.median(fast_walls)
+
+    primary = statistics.median(
+        value for key, value in per_workload_ms.items() if key != "bench_prompt_fast_ms"
+    )
     print(f"METRIC generate_ms={primary:.2f}")
     for key, value in sorted(per_workload_ms.items()):
         print(f"METRIC {key}={value:.2f}")

@@ -5,7 +5,7 @@ from __future__ import annotations
 import keyword
 import logging
 import threading
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 import dspy
 
@@ -85,6 +85,7 @@ def from_prompt(
     *,
     input_hints: dict[str, str] | None = None,
     output_hints: dict[str, str] | None = None,
+    mode: Literal["auto", "fast"] = "auto",
 ) -> GeneratedSignature:
     """Generate a DSPy Signature class from an arbitrary prompt.
 
@@ -105,6 +106,8 @@ def from_prompt(
             - Any combination the parser layer can normalise
         input_hints: Optional mapping of field-name → description for known inputs.
         output_hints: Optional mapping of field-name → description for known outputs.
+        mode: ``auto`` (default) uses the RLM architect for structureless
+            prompts; ``fast`` never runs the RLM.
 
     Returns:
         A fresh ``dspy.Signature`` subclass ready for use in ``dspy.Predict``,
@@ -131,6 +134,7 @@ def from_prompt(
         prompt,
         input_hints=input_hints,
         output_hints=output_hints,
+        mode=mode,
     )
 
 
@@ -140,6 +144,7 @@ def from_dataset(
     *,
     input_hints: dict[str, str] | None = None,
     output_hints: dict[str, str] | None = None,
+    mode: Literal["auto", "fast"] = "auto",
 ) -> GeneratedSignature:
     """Generate a DSPy Signature class from a tabular dataset.
 
@@ -159,14 +164,16 @@ def from_dataset(
             bias the RLM.
         input_hints: Optional mapping of field-name → description for known inputs.
         output_hints: Optional mapping of field-name → description for known outputs.
+        mode: ``auto`` (default) or ``fast``; the dataset path is deterministic
+            in both modes, so this only affects unlikely RLM fallbacks.
 
     Returns:
         A fresh ``dspy.Signature`` subclass ready for use in ``dspy.Predict``,
         ``dspy.ChainOfThought``, etc.
 
     Raises:
-        RuntimeError: If no language model is configured.
         TypeError: If *data* cannot be converted to tabular records.
+
 
     Example:
         >>> import pandas as pd
@@ -196,6 +203,7 @@ def from_dataset(
         task_hint=task_hint,
         input_hints=input_hints,
         output_hints=output_hints,
+        mode=mode,
     )
 
 
@@ -205,6 +213,7 @@ def generate(
     *,
     input_hints: dict[str, str] | None = None,
     output_hints: dict[str, str] | None = None,
+    mode: Literal["auto", "fast"] = "auto",
 ) -> GeneratedSignature:
     """Generate a DSPy Signature from prompt material or tabular data.
 
@@ -217,6 +226,10 @@ def generate(
             it identifies which columns should be predicted.
         input_hints: Field names mapped to improved input descriptions.
         output_hints: Field names mapped to improved output descriptions.
+        mode: ``auto`` (default) designs structured inputs deterministically
+            and falls back to the RLM for structureless prompts; ``fast``
+            never runs the RLM, so plain prompts receive the deterministic
+            fallback signature instead of the richer RLM-designed one.
 
     Returns:
         A fresh ``dspy.Signature`` subclass.
@@ -232,7 +245,7 @@ def generate(
         )
 
     generator = _get_generator(Config.get_sub_lm())
-    spec = cast(SignatureSpec, generator(parsed))
+    spec = cast(SignatureSpec, generator(parsed, fast=mode == "fast"))
     spec = _apply_hints(spec, input_hints, output_hints)
     signature = SignatureBuilder.build(spec)
 

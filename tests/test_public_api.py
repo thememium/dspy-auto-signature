@@ -55,8 +55,9 @@ class _FakeGenerator:
         self.sub_lm = sub_lm
         self.parsed: ParsedPrompt | None = None
 
-    def __call__(self, parsed: ParsedPrompt) -> SignatureSpec:
+    def __call__(self, parsed: ParsedPrompt, *, fast: bool = False) -> SignatureSpec:
         self.parsed = parsed
+        self.fast = fast
         return _summarizer_spec()
 
 
@@ -134,6 +135,17 @@ class TestGeneratePipeline:
             "\n\nTask: Classify support tickets"
         )
         assert issubclass(cast("type", sig), dspy.Signature)
+
+    def test_generate_forwards_fast_mode(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        das.configure(lm=dspy.LM("openai/gpt-4o"))
+        gen = _FakeGenerator()
+        monkeypatch.setattr(das, "RLMSignatureGenerator", lambda sub_lm=None: gen)
+
+        das.generate("Summarize this", mode="fast")
+        assert gen.fast is True
+
+        das.generate("Summarize this")
+        assert gen.fast is False
 
 
 class TestApplyHints:
