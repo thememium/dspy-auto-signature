@@ -18,8 +18,9 @@ import json
 import statistics
 import sys
 import time
+from typing import Any
 
-from dspy.clients.base_lm import BaseLM
+import dspy
 from dspy.dsp.utils.utils import dotdict
 
 import dspy_auto_signature as das
@@ -36,7 +37,11 @@ DRAFT = {
     ],
     "outputs": [
         {"name": "summary", "description": "Concise summary", "type": "string"},
-        {"name": "takeaways", "description": "Three key takeaways", "type": "list of strings"},
+        {
+            "name": "takeaways",
+            "description": "Three key takeaways",
+            "type": "list of strings",
+        },
     ],
 }
 SUBMIT_CODE = f"SUBMIT(draft={json.dumps(DRAFT)})"
@@ -45,25 +50,32 @@ CHAT_RESPONSE = "[[ ## reasoning ## ]]\nReady.\n\n[[ ## code ## ]]\n" + SUBMIT_C
 JSON_RESPONSE = json.dumps({"reasoning": "Ready.", "code": SUBMIT_CODE})
 
 
-class CannedLM(BaseLM):
+class CannedLM(dspy.LM):
     """Offline LM returning a canned SUBMIT action for every RLM iteration."""
 
     def __init__(self) -> None:
         super().__init__("canned", "chat", 0.0, 100_000, True)
         self.calls = 0
 
-    def forward(  # noqa: ANN001, ARG002
+    def forward(  # type: ignore[override]
         self,
         prompt: str | None = None,
-        messages: list[dict] | None = None,
-        **_kwargs,
-    ):
+        messages: list[dict[str, Any]] | None = None,
+        **_kwargs: Any,
+    ) -> dict[str, Any]:
         self.calls += 1
-        last = (messages or [{"content": prompt}])[-1]["content"]
-        tail = last[-200:]
-        content = JSON_RESPONSE if "Respond with a JSON object" in tail else CHAT_RESPONSE
+        content = messages[-1]["content"] if messages else (prompt or "")
+        tail = str(content)[-200:]
+        response = (
+            JSON_RESPONSE if "Respond with a JSON object" in tail else CHAT_RESPONSE
+        )
         return dotdict(
-            choices=[dotdict(message=dotdict(content=content, tool_calls=None), finish_reason="stop")],
+            choices=[
+                dotdict(
+                    message=dotdict(content=response, tool_calls=None),
+                    finish_reason="stop",
+                ),
+            ],
             usage=dotdict(prompt_tokens=0, completion_tokens=0, total_tokens=0),
             model="canned",
         )
@@ -77,20 +89,43 @@ def workloads() -> list[tuple[str, object, str | None]]:
         {"message": "Payment failed", "urgency": "high"},
     ]
     openai_messages = [
-        {"role": "system", "content": "You are a technical writer producing clear documentation."},
-        {"role": "user", "content": "Write a README for a Python CLI tool that converts CSV to JSON."},
+        {
+            "role": "system",
+            "content": "You are a technical writer producing clear documentation.",
+        },
+        {
+            "role": "user",
+            "content": "Write a README for a Python CLI tool that converts CSV to JSON.",
+        },
     ]
     anthropic_messages = [
         {"role": "user", "content": "Analyze the sentiment of customer reviews."},
-        {"role": "assistant", "content": "I'll classify each review as positive, negative, or neutral."},
+        {
+            "role": "assistant",
+            "content": "I'll classify each review as positive, negative, or neutral.",
+        },
     ]
     gemini_contents = [
-        {"role": "user", "parts": [{"text": "Extract key entities from this legal contract."}]},
-        {"role": "model", "parts": [{"text": "I'll identify parties, dates, and obligations."}]},
+        {
+            "role": "user",
+            "parts": [{"text": "Extract key entities from this legal contract."}],
+        },
+        {
+            "role": "model",
+            "parts": [{"text": "I'll identify parties, dates, and obligations."}],
+        },
     ]
     return [
-        ("prompt", "Given an article, produce a concise summary and three key takeaways.", None),
-        ("prompt_placeholders", "Summarize the {article} and translate the {paragraph} into French.", None),
+        (
+            "prompt",
+            "Given an article, produce a concise summary and three key takeaways.",
+            None,
+        ),
+        (
+            "prompt_placeholders",
+            "Summarize the {article} and translate the {paragraph} into French.",
+            None,
+        ),
         ("sdk_openai", openai_messages, None),
         ("sdk_anthropic", anthropic_messages, None),
         ("sdk_gemini", gemini_contents, None),
@@ -118,7 +153,9 @@ def main() -> int:
             signature = das.generate(source, task_hint=task_hint)
             walls.append((time.perf_counter() - t0) * 1000.0)
             # The generated class must be a usable dspy.Signature.
-            assert hasattr(signature, "input_fields") and len(signature.input_fields) >= 1
+            assert (
+                hasattr(signature, "input_fields") and len(signature.input_fields) >= 1
+            )
             assert len(signature.output_fields) >= 1
             calls.append(lm.calls)
         per_workload_ms[f"bench_{key}_ms"] = statistics.median(walls)
