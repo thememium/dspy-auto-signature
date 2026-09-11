@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
-from typing import cast
+from typing import Any, cast
 
 import dspy
 import pytest
@@ -75,6 +75,7 @@ class TestPublicAPI:
         assert hasattr(das, "from_dataset")
         assert hasattr(das, "generate")
         assert hasattr(das, "configure")
+        assert hasattr(das, "close_interpreter")
         assert hasattr(das, "SignatureSpec")
 
     def test_configure_sets_lm(self) -> None:
@@ -86,6 +87,11 @@ class TestPublicAPI:
     def test_from_dataset_rejects_prompt_input(self) -> None:
         with pytest.raises(TypeError, match=r"Use generate\(\)"):
             das.from_dataset("Summarize this")
+
+    def test_generate_rejects_unknown_mode(self) -> None:
+        bad_mode: Any = "turbo"
+        with pytest.raises(ValueError, match="Unknown mode"):
+            das.generate("Summarize this", mode=bad_mode)
 
 
 class TestGeneratePipeline:

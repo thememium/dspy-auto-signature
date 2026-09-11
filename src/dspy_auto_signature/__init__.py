@@ -14,7 +14,10 @@ from dspy_auto_signature.core.signature_builder import (
     GeneratedSignature,
     SignatureBuilder,
 )
-from dspy_auto_signature.generator.rlm_signature_generator import RLMSignatureGenerator
+from dspy_auto_signature.generator.rlm_signature_generator import (
+    RLMSignatureGenerator,
+    close_interpreter,
+)
 from dspy_auto_signature.parser import AutoParser, DataFrameParser
 from dspy_auto_signature.types.signature_spec import SignatureSpec
 
@@ -23,6 +26,7 @@ __all__ = [
     "from_prompt",
     "from_dataset",
     "configure",
+    "close_interpreter",
     "SignatureSpec",
     "GeneratedSignature",
 ]
@@ -236,6 +240,8 @@ def generate(
         A fresh ``dspy.Signature`` subclass.
 
     """
+    if mode not in ("auto", "fast", "rlm"):
+        raise ValueError(f"Unknown mode {mode!r}; expected 'auto', 'fast', or 'rlm'.")
     logger.debug("generate called with input type: %s", type(source).__name__)
     parsed = AutoParser.parse(source)
     if task_hint:

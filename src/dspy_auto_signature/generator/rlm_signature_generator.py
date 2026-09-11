@@ -261,8 +261,20 @@ class RLMSignatureGenerator(dspy.Module):
 
         inputs = cls._inputs_from_user(user_parts)
         outputs = cls._outputs_from_assistant(assistant_parts)
+        if task_hint and len(outputs) == 1 and outputs[0].name == "response":
+            inferred = cls._normalize_field_name(
+                cls._infer_prompt_output_name(task_hint)
+            )
+            if inferred != "task_result":
+                outputs = [
+                    FieldSpec(
+                        name=inferred,
+                        description=f"The generated {inferred.replace('_', ' ')}",
+                        suggested_type=outputs[0].suggested_type,
+                        field_type=FieldType.OUTPUT,
+                    ),
+                ]
         name = cls._sdk_class_name(user_parts[0], outputs)
-
         used = {field.name for field in inputs}
         outputs = [
             FieldSpec(

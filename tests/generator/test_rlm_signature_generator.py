@@ -650,6 +650,155 @@ class TestStructuralFastPath:
         assert "Task: Target markdown output" in spec.instructions
         SignatureBuilder.build(spec)
 
+    def test_hint_drives_output_name_for_prose_sdk_input(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(Config, "_lm", dspy.LM("openai/gpt-4o"))
+        generator = RLMSignatureGenerator()
+        stub = _StubRLM(_COMPLETE_DRAFT)
+        generator.sdk_rlm = stub  # type: ignore[assignment]
+        prompt = ParsedPrompt(
+            instruction_text=".\n\nTask: Classify support ticket urgency",
+            raw_input=[
+                {"role": "user", "content": "Server is on fire."},
+                {"role": "assistant", "content": "Got it, I'll take a look."},
+            ],
+        )
+
+        spec = generator.forward(prompt)
+
+        assert stub.calls == 0
+        assert [field.name for field in spec.outputs] == ["classification"]
+        SignatureBuilder.build(spec)
+
+    def test_fenced_json_in_assistant_content_is_decoded(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(Config, "_lm", dspy.LM("openai/gpt-4o"))
+        generator = RLMSignatureGenerator()
+        stub = _StubRLM(_COMPLETE_DRAFT)
+        generator.sdk_rlm = stub  # type: ignore[assignment]
+        prompt = ParsedPrompt(
+            instruction_text="",
+            raw_input=[
+                {"role": "user", "content": "Extract entities."},
+                {
+                    "role": "assistant",
+                    "content": '```json\n{"parties": "Acme", "items": ["a", "b"]}\n```',
+                },
+            ],
+        )
+
+        spec = generator.forward(prompt)
+
+        assert stub.calls == 0
+        assert [field.name for field in spec.outputs] == ["parties", "items"]
+        assert [field.suggested_type for field in spec.outputs] == [
+            "string",
+            "list of strings",
+        ]
+        SignatureBuilder.build(spec)
+
+    def test_empty_and_tool_messages_shape_instructions(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(Config, "_lm", dspy.LM("openai/gpt-4o"))
+        generator = RLMSignatureGenerator()
+        stub = _StubRLM(_COMPLETE_DRAFT)
+        generator.sdk_rlm = stub  # type: ignore[assignment]
+        prompt = ParsedPrompt(
+            instruction_text="",
+            raw_input=[
+                {"role": "tool", "content": "Tool trace: search executed."},
+                {"role": "user", "content": ""},
+                {"role": "user", "content": "Summarize the log."},
+            ],
+        )
+
+        spec = generator.forward(prompt)
+
+        assert stub.calls == 0
+        assert "Tool trace" in spec.instructions
+        assert "Summarize the log." in spec.instructions
+        SignatureBuilder.build(spec)
+
+    def test_fast_mode_falls_back_for_system_only_sdk(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(Config, "_lm", dspy.LM("openai/gpt-4o"))
+        generator = RLMSignatureGenerator()
+        stub = _StubRLM(_COMPLETE_DRAFT)
+        generator.sdk_rlm = stub  # type: ignore[assignment]
+        prompt = ParsedPrompt(
+            instruction_text="You summarize articles.",
+            raw_input=[{"role": "system", "content": "You summarize articles."}],
+        )
+
+        spec = generator.forward(prompt, mode="fast")
+
+        assert stub.calls == 0
+        assert [field.name for field in spec.inputs] == ["article"]
+        SignatureBuilder.build(spec)
+
+    def test_dataset_structural_failure_falls_back_to_rlm(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(Config, "_lm", dspy.LM("openai/gpt-4o"))
+        generator = RLMSignatureGenerator()
+        stub = _StubRLM(_COMPLETE_DRAFT)
+        generator.rlm = stub  # type: ignore[assignment]
+
+        def _raise(cls: type, profile: dict, task_context: str) -> SignatureSpec:
+            raise ValueError("bad profile")
+
+        monkeypatch.setattr(
+            RLMSignatureGenerator,
+            "_fallback_from_dataset",
+            classmethod(_raise),
+        )
+        prompt = ParsedPrompt(
+            instruction_text="Analyze the data",
+            raw_input=[{"message": "urgent", "label": "high"}],
+        )
+
+        spec = generator.forward(prompt)
+
+        assert stub.calls == 1
+        assert spec.name == "ArticleSummarizer"
+
+    def test_rlm_failure_falls_back_for_structureless_prompt(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(Config, "_lm", dspy.LM("openai/gpt-4o"))
+        generator = RLMSignatureGenerator()
+        generator.rlm = _StubRLM(error=RuntimeError("boom"))  # type: ignore[assignment]
+        prompt = ParsedPrompt(
+            instruction_text="Given an article, produce a concise summary.",
+            raw_input="Given an article, produce a concise summary.",
+        )
+
+        spec = generator.forward(prompt)
+
+        assert [field.name for field in spec.inputs] == ["article"]
+        assert [field.name for field in spec.outputs] == ["summary"]
+        SignatureBuilder.build(spec)
+
+    def test_sdk_class_name_fallbacks(self) -> None:
+        assert RLMSignatureGenerator._sdk_class_name("Do it.", []) == "TaskSignature"
+        assert (
+            RLMSignatureGenerator._sdk_class_name(
+                "Do it.",
+                [
+                    FieldSpec(
+                        name="task_result",
+                        description="The result",
+                        field_type=FieldType.OUTPUT,
+                    ),
+                ],
+            )
+            == "TaskResult"
+        )
+
 
 class _StubRLM:
     """Stand-in for a dspy.RLM that returns a canned draft or raises."""
