@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 
 import dspy
 import pytest
@@ -408,6 +408,68 @@ class TestWarmInterpreter:
             gen_mod.close_interpreter()
             assert fake.shutdown_calls == 1
             assert gen_mod._INTERPRETERS.interpreter is None
+        finally:
+            gen_mod._INTERPRETERS.interpreter = None
+
+    def test_generator_cache_is_thread_local(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import threading
+
+        import dspy_auto_signature as das
+
+        monkeypatch.setattr(Config, "_lm", dspy.LM("openai/gpt-4o"))
+        results: dict[str, Any] = {}
+        shared_lm = dspy.LM("openai/gpt-4o")
+
+        def worker(key: str) -> None:
+            generator = das._get_generator(shared_lm)
+            results[key] = generator
+
+        das._get_generator(shared_lm)  # warm main thread
+        threads = [threading.Thread(target=worker, args=(key,)) for key in ("a", "b")]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join()
+
+        assert results["a"] is not results["b"]
+        assert results["a"].rlm._interpreter is not results["b"].rlm._interpreter
+        assert das._get_generator(shared_lm) is das._get_generator(shared_lm)
+
+    def test_interpreter_proxy_delegates_and_cleans_up(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import gc
+
+        import dspy_auto_signature.generator.rlm_signature_generator as gen_mod
+
+        class _FakeInterpreter:
+            def __init__(self) -> None:
+                self.tools: dict[str, str] = {}
+                self.output_fields: list[str] | None = None
+                self._tools_registered = False
+                self.shutdown_calls = 0
+
+            def shutdown(self) -> None:
+                self.shutdown_calls += 1
+
+        monkeypatch.setattr(gen_mod, "PythonInterpreter", _FakeInterpreter)
+        gen_mod._INTERPRETERS.interpreter = None
+        try:
+            proxy = gen_mod._thread_interpreter()
+            inner = proxy._interpreter
+            proxy.tools["llm_query"] = "fn"  # attribute passthrough
+            assert inner.tools == {"llm_query": "fn"}
+            proxy.output_fields = ["draft"]
+            assert inner.output_fields == ["draft"]
+            proxy._tools_registered = False
+            assert inner._tools_registered is False
+
+            gen_mod._INTERPRETERS.interpreter = None
+            del proxy
+            gc.collect()
+            assert inner.shutdown_calls == 1
         finally:
             gen_mod._INTERPRETERS.interpreter = None
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import keyword
 import logging
+import threading
 from typing import Any, cast
 
 import dspy
@@ -28,22 +29,25 @@ __all__ = [
 
 logger = logging.getLogger(__name__)
 
-_cached_generator: RLMSignatureGenerator | None = None
-_cached_sub_lm: dspy.LM | None = None
+_generator_state = threading.local()
 
 
 def _get_generator(sub_lm: dspy.LM | None) -> RLMSignatureGenerator:
-    """Return a cached generator, rebuilding only when the sub-LM changes.
+    """Return the calling thread's cached generator.
 
     Constructing ``dspy.RLM`` modules is expensive (pydantic signature
-    machinery), so the generator is reused across calls within a process and
-    rebuilt only when :func:`configure` installs a different ``sub_lm``.
+    machinery), so each thread reuses one generator and its warm sandbox.
+    The cache is thread-local because ``PythonInterpreter`` is single-threaded;
+    sharing a generator across threads would execute LLM-generated code on
+    another thread's interpreter, which the interpreter forbids. Generators
+    are rebuilt when :func:`configure` installs a different ``sub_lm``.
     """
-    global _cached_generator, _cached_sub_lm
-    if _cached_generator is None or _cached_sub_lm is not sub_lm:
-        _cached_generator = RLMSignatureGenerator(sub_lm=sub_lm)
-        _cached_sub_lm = sub_lm
-    return _cached_generator
+    generator = getattr(_generator_state, "generator", None)
+    if generator is None or _generator_state.sub_lm is not sub_lm:
+        generator = RLMSignatureGenerator(sub_lm=sub_lm)
+        _generator_state.generator = generator
+        _generator_state.sub_lm = sub_lm
+    return generator
 
 
 def configure(

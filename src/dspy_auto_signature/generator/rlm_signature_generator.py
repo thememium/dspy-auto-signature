@@ -31,7 +31,7 @@ _PLACEHOLDER_PATTERN = re.compile(r"\{([a-zA-Z_][a-zA-Z0-9_]*)\}")
 _INTERPRETERS = threading.local()
 
 
-def _thread_interpreter() -> PythonInterpreter:
+def _thread_interpreter() -> Any:
     """Return the calling thread's warm code interpreter, creating it on first use.
 
     ``PythonInterpreter`` lazily spawns its Deno/Pyodide sandbox on first
@@ -41,9 +41,34 @@ def _thread_interpreter() -> PythonInterpreter:
     """
     interpreter = getattr(_INTERPRETERS, "interpreter", None)
     if interpreter is None:
-        interpreter = PythonInterpreter()
+        interpreter = _ThreadInterpreterProxy(PythonInterpreter())
         _INTERPRETERS.interpreter = interpreter
     return interpreter
+
+
+class _ThreadInterpreterProxy:
+    """Delegate to a thread's ``PythonInterpreter`` and shut it down on thread death.
+
+    ``PythonInterpreter`` lazily spawns a Deno subprocess and is bound to its
+    creating thread. The thread-local reference dies with the thread, so the
+    proxy's ``__del__`` terminates the sandbox instead of leaking the child
+    process for every retired thread.
+    """
+
+    def __init__(self, interpreter: PythonInterpreter) -> None:
+        object.__setattr__(self, "_interpreter", interpreter)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(object.__getattribute__(self, "_interpreter"), name)
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        setattr(object.__getattribute__(self, "_interpreter"), name, value)
+
+    def __del__(self) -> None:
+        try:
+            object.__getattribute__(self, "_interpreter").shutdown()
+        except Exception:
+            pass
 
 
 def close_interpreter() -> None:
