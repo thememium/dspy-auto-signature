@@ -360,6 +360,58 @@ class TestSDKSanitization:
             raise AssertionError("Expected ValueError for forbidden-only outputs")
 
 
+class TestWarmInterpreter:
+    def test_thread_interpreter_is_reused_until_reset(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import dspy_auto_signature.generator.rlm_signature_generator as gen_mod
+
+        created: list[object] = []
+
+        class _FakeInterpreter:
+            def __init__(self) -> None:
+                created.append(self)
+
+        monkeypatch.setattr(gen_mod, "PythonInterpreter", _FakeInterpreter)
+        gen_mod._INTERPRETERS.interpreter = None
+        try:
+            first = gen_mod._thread_interpreter()
+            second = gen_mod._thread_interpreter()
+            assert first is second
+            assert len(created) == 1
+        finally:
+            gen_mod._INTERPRETERS.interpreter = None
+
+    def test_generators_share_the_thread_interpreter(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(Config, "_lm", dspy.LM("openai/gpt-4o"))
+        first = RLMSignatureGenerator()
+        second = RLMSignatureGenerator()
+        assert first.rlm._interpreter is second.rlm._interpreter
+
+    def test_close_interpreter_for_thread_shuts_down(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import dspy_auto_signature.generator.rlm_signature_generator as gen_mod
+
+        class _FakeInterpreter:
+            def __init__(self) -> None:
+                self.shutdown_calls = 0
+
+            def shutdown(self) -> None:
+                self.shutdown_calls += 1
+
+        fake = _FakeInterpreter()
+        gen_mod._INTERPRETERS.interpreter = fake
+        try:
+            gen_mod.close_interpreter()
+            assert fake.shutdown_calls == 1
+            assert gen_mod._INTERPRETERS.interpreter is None
+        finally:
+            gen_mod._INTERPRETERS.interpreter = None
+
+
 class TestStructuralFastPath:
     def test_sdk_messages_bypass_rlm_and_build_generic_message_spec(
         self, monkeypatch: pytest.MonkeyPatch

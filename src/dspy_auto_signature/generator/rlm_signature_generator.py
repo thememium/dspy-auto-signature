@@ -6,9 +6,11 @@ import json
 import keyword
 import logging
 import re
+import threading
 from typing import TYPE_CHECKING, Any
 
 import dspy
+from dspy.primitives.python_interpreter import PythonInterpreter
 from pydantic import BaseModel
 
 from dspy_auto_signature.core.config import Config
@@ -26,6 +28,31 @@ logger = logging.getLogger(__name__)
 
 _PLACEHOLDER_PATTERN = re.compile(r"\{([a-zA-Z_][a-zA-Z0-9_]*)\}")
 
+_INTERPRETERS = threading.local()
+
+
+def _thread_interpreter() -> PythonInterpreter:
+    """Return the calling thread's warm code interpreter, creating it on first use.
+
+    ``PythonInterpreter`` lazily spawns its Deno/Pyodide sandbox on first
+    ``execute()`` and is single-threaded, so one interpreter is cached per
+    thread and reused across RLM runs instead of paying sandbox startup per
+    generation.
+    """
+    interpreter = getattr(_INTERPRETERS, "interpreter", None)
+    if interpreter is None:
+        interpreter = PythonInterpreter()
+        _INTERPRETERS.interpreter = interpreter
+    return interpreter
+
+
+def close_interpreter() -> None:
+    """Shut down this thread's warm interpreter, if one exists."""
+    interpreter = getattr(_INTERPRETERS, "interpreter", None)
+    if interpreter is not None:
+        interpreter.shutdown()
+        _INTERPRETERS.interpreter = None
+
 
 class RLMSignatureGenerator(dspy.Module):
     """Generate a ``SignatureSpec`` through one recursive analysis workflow."""
@@ -38,12 +65,14 @@ class RLMSignatureGenerator(dspy.Module):
         verbose: bool = False,
     ) -> None:
         super().__init__()
+        interpreter = _thread_interpreter()
         self.rlm = dspy.RLM(
             GenerateSignature,
             max_iterations=max_iterations,
             max_llm_calls=max_llm_calls,
             sub_lm=sub_lm,
             verbose=verbose,
+            interpreter=interpreter,
         )
         self.sdk_rlm = dspy.RLM(
             GenerateSDKSignature,
@@ -51,6 +80,7 @@ class RLMSignatureGenerator(dspy.Module):
             max_llm_calls=max_llm_calls,
             sub_lm=sub_lm,
             verbose=verbose,
+            interpreter=interpreter,
         )
 
     def forward(self, prompt: ParsedPrompt) -> SignatureSpec:
