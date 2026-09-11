@@ -28,6 +28,23 @@ __all__ = [
 
 logger = logging.getLogger(__name__)
 
+_cached_generator: RLMSignatureGenerator | None = None
+_cached_sub_lm: dspy.LM | None = None
+
+
+def _get_generator(sub_lm: dspy.LM | None) -> RLMSignatureGenerator:
+    """Return a cached generator, rebuilding only when the sub-LM changes.
+
+    Constructing ``dspy.RLM`` modules is expensive (pydantic signature
+    machinery), so the generator is reused across calls within a process and
+    rebuilt only when :func:`configure` installs a different ``sub_lm``.
+    """
+    global _cached_generator, _cached_sub_lm
+    if _cached_generator is None or _cached_sub_lm is not sub_lm:
+        _cached_generator = RLMSignatureGenerator(sub_lm=sub_lm)
+        _cached_sub_lm = sub_lm
+    return _cached_generator
+
 
 def configure(
     lm: dspy.LM | None = None,
@@ -210,7 +227,7 @@ def generate(
             }
         )
 
-    generator = RLMSignatureGenerator(sub_lm=Config.get_sub_lm())
+    generator = _get_generator(Config.get_sub_lm())
     spec = cast(SignatureSpec, generator(parsed))
     spec = _apply_hints(spec, input_hints, output_hints)
     signature = SignatureBuilder.build(spec)
