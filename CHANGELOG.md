@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+### 🚀 Enhancements
+
+- Deterministic structural signature generation: SDK message arrays, dataset profiles, and placeholder prompts build signatures without RLM or LLM calls (~0.25ms vs ~825ms)
+- `mode` parameter on `generate()`, `from_prompt()`, and `from_dataset()`: `"auto"` (default, structural-when-possible), `"fast"` (never runs the RLM), `"rlm"` (always uses the RLM architect)
+- Thread-local warm code interpreter: RLM runs reuse a pooled Deno sandbox instead of spawning one per generation; the sandbox shuts down when its thread dies
+- Cached `RLMSignatureGenerator` per thread (rebuilt only when the configured `sub_lm` changes)
+- SDK structural path preserves `task_hint` in generated instructions
+
+### ✅ Tests
+
+
+
 ## v0.1.3 (2026-06-06)
 
 [Compare changes](https://github.com/thememium/dspy-auto-signature/compare/v0.1.2...v0.1.3)

@@ -85,7 +85,7 @@ def from_prompt(
     *,
     input_hints: dict[str, str] | None = None,
     output_hints: dict[str, str] | None = None,
-    mode: Literal["auto", "fast"] = "auto",
+    mode: Literal["auto", "fast", "rlm"] = "auto",
 ) -> GeneratedSignature:
     """Generate a DSPy Signature class from an arbitrary prompt.
 
@@ -144,7 +144,7 @@ def from_dataset(
     *,
     input_hints: dict[str, str] | None = None,
     output_hints: dict[str, str] | None = None,
-    mode: Literal["auto", "fast"] = "auto",
+    mode: Literal["auto", "fast", "rlm"] = "auto",
 ) -> GeneratedSignature:
     """Generate a DSPy Signature class from a tabular dataset.
 
@@ -213,7 +213,7 @@ def generate(
     *,
     input_hints: dict[str, str] | None = None,
     output_hints: dict[str, str] | None = None,
-    mode: Literal["auto", "fast"] = "auto",
+    mode: Literal["auto", "fast", "rlm"] = "auto",
 ) -> GeneratedSignature:
     """Generate a DSPy Signature from prompt material or tabular data.
 
@@ -229,7 +229,8 @@ def generate(
         mode: ``auto`` (default) designs structured inputs deterministically
             and falls back to the RLM for structureless prompts; ``fast``
             never runs the RLM, so plain prompts receive the deterministic
-            fallback signature instead of the richer RLM-designed one.
+            fallback signature instead of the richer RLM-designed one;
+            ``rlm`` lets the RLM architect design every signature.
 
     Returns:
         A fresh ``dspy.Signature`` subclass.
@@ -245,7 +246,7 @@ def generate(
         )
 
     generator = _get_generator(Config.get_sub_lm())
-    spec = cast(SignatureSpec, generator(parsed, fast=mode == "fast"))
+    spec = cast(SignatureSpec, generator(parsed, mode=mode))
     spec = _apply_hints(spec, input_hints, output_hints)
     signature = SignatureBuilder.build(spec)
 

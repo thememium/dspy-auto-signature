@@ -504,6 +504,29 @@ class TestStructuralFastPath:
         assert "sentiment" in spec.instructions.lower()
         SignatureBuilder.build(spec)
 
+    def test_rlm_mode_forces_rlm_on_structured_sdk_input(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(Config, "_lm", dspy.LM("openai/gpt-4o"))
+        generator = RLMSignatureGenerator()
+        stub = _StubRLM(_COMPLETE_DRAFT)
+        generator.sdk_rlm = stub  # type: ignore[assignment]
+        prompt = ParsedPrompt(
+            instruction_text="Analyze the sentiment of customer reviews.",
+            raw_input=[
+                {
+                    "role": "user",
+                    "content": "Analyze the sentiment of customer reviews.",
+                },
+            ],
+        )
+
+        spec = generator.forward(prompt, mode="rlm")
+
+        assert stub.calls == 1
+        assert spec.name == "ArticleSummarizer"
+        SignatureBuilder.build(spec)
+
     def test_sdk_placeholders_become_input_fields(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -689,7 +712,7 @@ class TestForwardPromptPath:
             raw_input="Given an article, produce a concise summary.",
         )
 
-        spec = generator.forward(prompt, fast=True)
+        spec = generator.forward(prompt, mode="fast")
 
         assert stub.calls == 0
         assert [field.name for field in spec.inputs] == ["article"]

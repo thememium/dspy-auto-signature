@@ -7,7 +7,7 @@ import keyword
 import logging
 import re
 import threading
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal
 
 import dspy
 from dspy.primitives.python_interpreter import PythonInterpreter
@@ -108,33 +108,46 @@ class RLMSignatureGenerator(dspy.Module):
             interpreter=interpreter,
         )
 
-    def forward(self, prompt: ParsedPrompt, *, fast: bool = False) -> SignatureSpec:
+    def forward(
+        self,
+        prompt: ParsedPrompt,
+        *,
+        mode: Literal["auto", "fast", "rlm"] = "auto",
+    ) -> SignatureSpec:
         """Prefer deterministic structure; run the RLM only when structure is thin.
 
-        With ``fast=True``, structureless plain prompts also skip the RLM and
-        receive the deterministic prompt fallback (inferred input/output names)
-        instead of the richer RLM-designed signature.
+        With ``mode="fast"``, structureless prompts also skip the RLM and
+        receive the deterministic fallback (inferred input/output names)
+        instead of the richer RLM-designed signature. With ``mode="rlm"``,
+        the RLM architect designs every signature, including inputs that the
+        deterministic structural paths could handle.
         """
         if self._is_sdk_format(prompt):
-            spec = self._structural_sdk_spec(prompt)
-            if spec is not None:
-                return spec
-            if fast:
-                return self._fallback_from_context(self._build_context(prompt))
+            if mode != "rlm":
+                spec = self._structural_sdk_spec(prompt)
+                if spec is not None:
+                    return spec
+                if mode == "fast":
+                    return self._fallback_from_context(self._build_context(prompt))
             return self._forward_sdk(prompt)
 
         context = self._build_context(prompt)
-        if context["source_kind"] == "dataset":
-            profile = json.loads(context["data_profile_json"])
-            try:
-                return self._fallback_from_dataset(profile, context["task_context"])
-            except Exception as exc:
-                logger.warning("Dataset structural generation failed: %s", exc)
+        if mode != "rlm":
+            if context["source_kind"] == "dataset":
+                profile = json.loads(context["data_profile_json"])
+                try:
+                    return self._fallback_from_dataset(profile, context["task_context"])
+                except Exception as exc:
+                    logger.warning("Dataset structural generation failed: %s", exc)
 
-        if fast or _PLACEHOLDER_PATTERN.search(context["task_context"]):
-            return self._fallback_from_prompt(context["task_context"])
+            if mode == "fast" or _PLACEHOLDER_PATTERN.search(context["task_context"]):
+                return self._fallback_from_prompt(context["task_context"])
 
-        lm = Config.get_lm()
+        lm = (
+            Config.get_dataset_lm()
+            if context["source_kind"] == "dataset"
+            else Config.get_lm()
+        )
         try:
             with dspy.settings.context(lm=lm):
                 result = self.rlm(**context)
