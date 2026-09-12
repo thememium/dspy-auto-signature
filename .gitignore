@@ -228,3 +228,5 @@ summary_signature.py
 .omo
 
 examples/output/*.py
+autoresearch.sh
+benchmarks
