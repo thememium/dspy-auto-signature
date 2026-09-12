@@ -18,7 +18,9 @@ Run:
 """
 
 from __future__ import annotations
+
 from typing import Any
+
 import dspy
 
 import dspy_auto_signature as das
@@ -28,6 +30,27 @@ lm = dspy.LM(
     cache=False,
     extra_body={"provider": {"order": ["groq"], "allow_fallbacks": False}},
 )
+
+
+def _support_ticket_rows() -> list[dict[str, str]]:
+    """Build the example support-ticket records."""
+    return [
+        {
+            "message": "The server room AC is out and equipment is overheating.",
+            "urgency": "high",
+            "sentiment": "negative",
+        },
+        {
+            "message": "Can someone clean conference room B next week?",
+            "urgency": "low",
+            "sentiment": "neutral",
+        },
+        {
+            "message": "Thanks for fixing the VPN, works perfectly now!",
+            "urgency": "medium",
+            "sentiment": "positive",
+        },
+    ]
 
 
 def _support_tickets_df() -> Any:
@@ -95,39 +118,12 @@ def cot_dataframe_example() -> None:
     ) as f:
         f.write(sig.to_source())
 
-    print("=== DataFrame → Signature ===")
-    print(f"Generated: {sig}")
-    print(f"Docstring: {sig.__doc__}")
-    print(f"Inputs:    {list(sig.input_fields.keys())}")
-    print(f"Outputs:   {list(sig.output_fields.keys())}")
-
-    with open(
-        "examples/output/example_dataset_signature.py", "w", encoding="utf-8"
-    ) as f:
-        f.write(sig.to_source())
-
 
 def from_list_example() -> None:
     """Generate a signature from a list of dicts (deterministic path)."""
     das.configure(lm=lm)
 
-    rows = [
-        {
-            "message": "The server room AC is out and equipment is overheating.",
-            "urgency": "high",
-            "sentiment": "negative",
-        },
-        {
-            "message": "Can someone clean conference room B next week?",
-            "urgency": "low",
-            "sentiment": "neutral",
-        },
-        {
-            "message": "Thanks for fixing the VPN, works perfectly now!",
-            "urgency": "medium",
-            "sentiment": "positive",
-        },
-    ]
+    rows = _support_ticket_rows()
 
     sig = das.generate(
         rows,
@@ -144,10 +140,34 @@ def from_list_example() -> None:
         f.write(sig.to_source())
 
 
+def cot_list_example() -> None:
+    """Generate the same signature with one ChainOfThought call (mode="cot")."""
+    das.configure(lm=lm)
+    rows = _support_ticket_rows()
+
+    sig = das.generate(
+        rows,
+        task_hint="Classify support tickets by urgency and sentiment",
+        mode="cot",
+    )
+
+    print("\n=== List of dicts → Signature (ChainOfThought mode) ===")
+    print(f"Generated: {sig}")
+    print(f"Docstring: {sig.__doc__}")
+    print(f"Inputs:    {list(sig.input_fields.keys())}")
+    print(f"Outputs:   {list(sig.output_fields.keys())}")
+
+    with open(
+        "examples/output/example_list_cot_signature.py", "w", encoding="utf-8"
+    ) as f:
+        f.write(sig.to_source())
+
+
 def main() -> None:
     from_dataframe_example()
     cot_dataframe_example()
     from_list_example()
+    cot_list_example()
 
 
 if __name__ == "__main__":
