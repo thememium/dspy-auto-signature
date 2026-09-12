@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
-from typing import cast
+from typing import Any, cast
 
 import dspy
 import pytest
@@ -55,8 +55,14 @@ class _FakeGenerator:
         self.sub_lm = sub_lm
         self.parsed: ParsedPrompt | None = None
 
-    def __call__(self, parsed: ParsedPrompt) -> SignatureSpec:
+    def __call__(
+        self,
+        parsed: ParsedPrompt,
+        *,
+        mode: str = "auto",
+    ) -> SignatureSpec:
         self.parsed = parsed
+        self.mode = mode
         return _summarizer_spec()
 
 
@@ -69,6 +75,7 @@ class TestPublicAPI:
         assert hasattr(das, "from_dataset")
         assert hasattr(das, "generate")
         assert hasattr(das, "configure")
+        assert hasattr(das, "close_interpreter")
         assert hasattr(das, "SignatureSpec")
 
     def test_configure_sets_lm(self) -> None:
@@ -80,6 +87,11 @@ class TestPublicAPI:
     def test_from_dataset_rejects_prompt_input(self) -> None:
         with pytest.raises(TypeError, match=r"Use generate\(\)"):
             das.from_dataset("Summarize this")
+
+    def test_generate_rejects_unknown_mode(self) -> None:
+        bad_mode: Any = "turbo"
+        with pytest.raises(ValueError, match="Unknown mode"):
+            das.generate("Summarize this", mode=bad_mode)
 
 
 class TestGeneratePipeline:
@@ -134,6 +146,20 @@ class TestGeneratePipeline:
             "\n\nTask: Classify support tickets"
         )
         assert issubclass(cast("type", sig), dspy.Signature)
+
+    def test_generate_forwards_mode(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        das.configure(lm=dspy.LM("openai/gpt-4o"))
+        gen = _FakeGenerator()
+        monkeypatch.setattr(das, "RLMSignatureGenerator", lambda sub_lm=None: gen)
+
+        das.generate("Summarize this", mode="fast")
+        assert gen.mode == "fast"
+
+        das.generate("Summarize this", mode="rlm")
+        assert gen.mode == "rlm"
+
+        das.generate("Summarize this")
+        assert gen.mode == "auto"
 
 
 class TestApplyHints:

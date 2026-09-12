@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import keyword
 import logging
-from typing import Any, cast
+import threading
+from typing import Any, Literal, cast
 
 import dspy
 
@@ -13,7 +14,10 @@ from dspy_auto_signature.core.signature_builder import (
     GeneratedSignature,
     SignatureBuilder,
 )
-from dspy_auto_signature.generator.rlm_signature_generator import RLMSignatureGenerator
+from dspy_auto_signature.generator.rlm_signature_generator import (
+    RLMSignatureGenerator,
+    close_interpreter,
+)
 from dspy_auto_signature.parser import AutoParser, DataFrameParser
 from dspy_auto_signature.types.signature_spec import SignatureSpec
 
@@ -22,11 +26,32 @@ __all__ = [
     "from_prompt",
     "from_dataset",
     "configure",
+    "close_interpreter",
     "SignatureSpec",
     "GeneratedSignature",
 ]
 
 logger = logging.getLogger(__name__)
+
+_generator_state = threading.local()
+
+
+def _get_generator(sub_lm: dspy.LM | None) -> RLMSignatureGenerator:
+    """Return the calling thread's cached generator.
+
+    Constructing ``dspy.RLM`` modules is expensive (pydantic signature
+    machinery), so each thread reuses one generator and its warm sandbox.
+    The cache is thread-local because ``PythonInterpreter`` is single-threaded;
+    sharing a generator across threads would execute LLM-generated code on
+    another thread's interpreter, which the interpreter forbids. Generators
+    are rebuilt when :func:`configure` installs a different ``sub_lm``.
+    """
+    generator = getattr(_generator_state, "generator", None)
+    if generator is None or _generator_state.sub_lm is not sub_lm:
+        generator = RLMSignatureGenerator(sub_lm=sub_lm)
+        _generator_state.generator = generator
+        _generator_state.sub_lm = sub_lm
+    return generator
 
 
 def configure(
@@ -64,6 +89,7 @@ def from_prompt(
     *,
     input_hints: dict[str, str] | None = None,
     output_hints: dict[str, str] | None = None,
+    mode: Literal["auto", "fast", "rlm"] = "auto",
 ) -> GeneratedSignature:
     """Generate a DSPy Signature class from an arbitrary prompt.
 
@@ -84,6 +110,8 @@ def from_prompt(
             - Any combination the parser layer can normalise
         input_hints: Optional mapping of field-name → description for known inputs.
         output_hints: Optional mapping of field-name → description for known outputs.
+        mode: ``auto`` (default) uses the RLM architect for structureless
+            prompts; ``fast`` never runs the RLM.
 
     Returns:
         A fresh ``dspy.Signature`` subclass ready for use in ``dspy.Predict``,
@@ -110,6 +138,7 @@ def from_prompt(
         prompt,
         input_hints=input_hints,
         output_hints=output_hints,
+        mode=mode,
     )
 
 
@@ -119,6 +148,7 @@ def from_dataset(
     *,
     input_hints: dict[str, str] | None = None,
     output_hints: dict[str, str] | None = None,
+    mode: Literal["auto", "fast", "rlm"] = "auto",
 ) -> GeneratedSignature:
     """Generate a DSPy Signature class from a tabular dataset.
 
@@ -138,14 +168,16 @@ def from_dataset(
             bias the RLM.
         input_hints: Optional mapping of field-name → description for known inputs.
         output_hints: Optional mapping of field-name → description for known outputs.
+        mode: ``auto`` (default) or ``fast``; the dataset path is deterministic
+            in both modes, so this only affects unlikely RLM fallbacks.
 
     Returns:
         A fresh ``dspy.Signature`` subclass ready for use in ``dspy.Predict``,
         ``dspy.ChainOfThought``, etc.
 
     Raises:
-        RuntimeError: If no language model is configured.
         TypeError: If *data* cannot be converted to tabular records.
+
 
     Example:
         >>> import pandas as pd
@@ -175,6 +207,7 @@ def from_dataset(
         task_hint=task_hint,
         input_hints=input_hints,
         output_hints=output_hints,
+        mode=mode,
     )
 
 
@@ -184,6 +217,7 @@ def generate(
     *,
     input_hints: dict[str, str] | None = None,
     output_hints: dict[str, str] | None = None,
+    mode: Literal["auto", "fast", "rlm"] = "auto",
 ) -> GeneratedSignature:
     """Generate a DSPy Signature from prompt material or tabular data.
 
@@ -196,11 +230,18 @@ def generate(
             it identifies which columns should be predicted.
         input_hints: Field names mapped to improved input descriptions.
         output_hints: Field names mapped to improved output descriptions.
+        mode: ``auto`` (default) designs structured inputs deterministically
+            and falls back to the RLM for structureless prompts; ``fast``
+            never runs the RLM, so plain prompts receive the deterministic
+            fallback signature instead of the richer RLM-designed one;
+            ``rlm`` lets the RLM architect design every signature.
 
     Returns:
         A fresh ``dspy.Signature`` subclass.
 
     """
+    if mode not in ("auto", "fast", "rlm"):
+        raise ValueError(f"Unknown mode {mode!r}; expected 'auto', 'fast', or 'rlm'.")
     logger.debug("generate called with input type: %s", type(source).__name__)
     parsed = AutoParser.parse(source)
     if task_hint:
@@ -210,8 +251,8 @@ def generate(
             }
         )
 
-    generator = RLMSignatureGenerator(sub_lm=Config.get_sub_lm())
-    spec = cast(SignatureSpec, generator(parsed))
+    generator = _get_generator(Config.get_sub_lm())
+    spec = cast(SignatureSpec, generator(parsed, mode=mode))
     spec = _apply_hints(spec, input_hints, output_hints)
     signature = SignatureBuilder.build(spec)
 
