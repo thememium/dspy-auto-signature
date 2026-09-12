@@ -221,6 +221,20 @@ class TestGroundedFallback:
         assert [field.name for field in spec.outputs] == ["urgency"]
         SignatureBuilder.build(spec)
 
+    def test_extract_output_names_skips_unusable_segments(self) -> None:
+        names = RLMSignatureGenerator._extract_output_names(
+            "Given {text}, predict the urgency level and do the thing very carefully, !!",
+            reserved=set(),
+        )
+        assert names == ["urgency"]
+
+    def test_extract_output_names_skips_reserved_names(self) -> None:
+        names = RLMSignatureGenerator._extract_output_names(
+            "Given {text}, predict the text and urgency.",
+            reserved={"text"},
+        )
+        assert names == ["urgency"]
+
 
 class TestSDKDetection:
     def test_detects_openai_sdk_format(self) -> None:
