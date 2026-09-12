@@ -798,13 +798,13 @@ class TestStructuralFastPath:
         assert [field.name for field in spec.inputs] == ["article"]
         SignatureBuilder.build(spec)
 
-    def test_dataset_structural_failure_falls_back_to_rlm(
+    def test_dataset_structural_failure_falls_back_to_cot(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setattr(Config, "_lm", dspy.LM("openai/gpt-4o"))
         generator = RLMSignatureGenerator()
         stub = _StubRLM(_COMPLETE_DRAFT)
-        generator.rlm = stub  # type: ignore[assignment]
+        generator.cot = stub  # ty: ignore[invalid-assignment]
 
         def _raise(cls: type, profile: dict, task_context: str) -> SignatureSpec:
             raise ValueError("bad profile")
@@ -835,7 +835,7 @@ class TestStructuralFastPath:
             raw_input="Given an article, produce a concise summary.",
         )
 
-        spec = generator.forward(prompt)
+        spec = generator.forward(prompt, mode="rlm")
 
         assert [field.name for field in spec.inputs] == ["article"]
         assert [field.name for field in spec.outputs] == ["summary"]
@@ -900,11 +900,30 @@ class TestForwardPromptPath:
             raw_input="Summarize the article.",
         )
 
-        spec = generator.forward(prompt)
+        spec = generator.forward(prompt, mode="rlm")
 
         assert stub.kwargs["source_kind"] == "prompt"
         assert spec.name == "ArticleSummarizer"
         assert [field.name for field in spec.inputs] == ["article"]
+        SignatureBuilder.build(spec)
+
+    def test_auto_falls_back_to_cot_for_structureless_prompt(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(Config, "_lm", dspy.LM("openai/gpt-4o"))
+        generator = RLMSignatureGenerator()
+        stub = _StubRLM(_COMPLETE_DRAFT)
+        generator.cot = stub  # ty: ignore[invalid-assignment]
+        prompt = ParsedPrompt(
+            instruction_text="Summarize the article.",
+            raw_input="Summarize the article.",
+        )
+
+        spec = generator.forward(prompt)
+
+        assert stub.calls == 1
+        assert stub.kwargs["source_kind"] == "prompt"
+        assert spec.name == "ArticleSummarizer"
         SignatureBuilder.build(spec)
 
     def test_cot_mode_runs_cot_on_plain_prompt(
@@ -1069,13 +1088,13 @@ class TestForwardPromptPath:
 
 
 class TestForwardSDKPath:
-    def test_forward_sdk_runs_sdk_rlm_and_sanitizes(
+    def test_forward_sdk_runs_sdk_cot_and_sanitizes(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         monkeypatch.setattr(Config, "_lm", dspy.LM("openai/gpt-4o"))
         generator = RLMSignatureGenerator()
         stub = _StubRLM(_COMPLETE_DRAFT)
-        generator.sdk_rlm = stub  # type: ignore[assignment]
+        generator.cot_sdk = stub  # ty: ignore[invalid-assignment]
         prompt = ParsedPrompt(
             instruction_text="You summarize articles.",
             raw_input=[{"role": "system", "content": "You summarize articles."}],
@@ -1092,7 +1111,7 @@ class TestForwardSDKPath:
     ) -> None:
         monkeypatch.setattr(Config, "_lm", dspy.LM("openai/gpt-4o"))
         generator = RLMSignatureGenerator()
-        generator.sdk_rlm = _StubRLM(  # type: ignore[assignment]
+        generator.cot_sdk = _StubRLM(  # ty: ignore[invalid-assignment]
             error=RuntimeError("boom")
         )
         prompt = ParsedPrompt(
