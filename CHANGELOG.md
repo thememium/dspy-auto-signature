@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.1.5 (2026-09-12)
+
+[Compare changes](https://github.com/thememium/dspy-auto-signature/compare/v0.1.4...v0.1.5)
+
+### 🚀 Enhancements
+
+- Add ChainOfThought mode and improve signature generation features (#6) (#6) ([9bad5db](https://github.com/thememium/dspy-auto-signature/commit/9bad5db062394b195c7b6b957d42fc499a1cac4a))
+
+### Contributors
+
+- Edward Boswell <thememium@gmail.com>
+
 ## v0.1.4 (2026-09-12)
 
 [Compare changes](https://github.com/thememium/dspy-auto-signature/compare/v0.1.3...v0.1.4)
