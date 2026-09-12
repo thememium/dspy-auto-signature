@@ -27,6 +27,41 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _PLACEHOLDER_PATTERN = re.compile(r"\{([a-zA-Z_][a-zA-Z0-9_]*)\}")
+_OUTPUT_CLAUSE_PATTERN = re.compile(
+    r"\b(?:predict|classify|determine|identify|estimate|rate|detect|rank"
+    r"|output|produce|return|report|extract|generate)\b(?P<clause>[^.;!\n]*)",
+    re.IGNORECASE,
+)
+_OUTPUT_LEAD_WORDS = frozenset(
+    {
+        "the",
+        "a",
+        "an",
+        "and",
+        "or",
+        "of",
+        "for",
+        "with",
+        "from",
+        "into",
+        "to",
+        "in",
+        "on",
+        "this",
+        "that",
+        "whether",
+        "if",
+        "is",
+        "are",
+        "be",
+        "its",
+        "their",
+        "also",
+    }
+)
+_OUTPUT_TRAILING_MODIFIERS = frozenset(
+    {"level", "score", "value", "type", "category", "class", "degree", "rating"}
+)
 
 _INTERPRETERS = threading.local()
 
@@ -744,7 +779,12 @@ class RLMSignatureGenerator(dspy.Module):
         input_names = list(
             dict.fromkeys(re.findall(r"\{([a-zA-Z_][a-zA-Z0-9_]*)\}", text))
         ) or [cls._infer_prompt_input_name(text)]
-        output_name = cls._infer_prompt_output_name(text)
+        extracted = cls._extract_output_names(text, reserved=set(input_names))
+        inferred = cls._infer_prompt_output_name(text)
+        if len(extracted) >= 2 or (extracted and inferred == "task_result"):
+            output_names = extracted
+        else:
+            output_names = [inferred]
         used: set[str] = set()
         inputs: list[FieldSpec] = []
         for raw_name in input_names:
@@ -758,19 +798,23 @@ class RLMSignatureGenerator(dspy.Module):
                     field_type=FieldType.INPUT,
                 )
             )
-        output_name = cls._unique_name(output_name, used)
-        return SignatureSpec(
-            name=cls._normalize_class_name(f"{output_name} task"),
-            instructions=text,
-            inputs=inputs,
-            outputs=[
+        outputs: list[FieldSpec] = []
+        for raw_name in output_names:
+            name = cls._unique_name(cls._normalize_field_name(raw_name), used)
+            used.add(name)
+            outputs.append(
                 FieldSpec(
-                    name=output_name,
-                    description=f"The generated {output_name.replace('_', ' ')}",
+                    name=name,
+                    description=f"The generated {raw_name.replace('_', ' ')}",
                     suggested_type="string",
                     field_type=FieldType.OUTPUT,
                 )
-            ],
+            )
+        return SignatureSpec(
+            name=cls._normalize_class_name(f"{' and '.join(output_names)} task"),
+            instructions=text,
+            inputs=inputs,
+            outputs=outputs,
         )
 
     @staticmethod
@@ -856,6 +900,38 @@ class RLMSignatureGenerator(dspy.Module):
             if signal in lowered:
                 return name
         return "task_result"
+
+    @classmethod
+    def _extract_output_names(cls, text: str, *, reserved: set[str]) -> list[str]:
+        """Extract explicit multi-output noun phrases from the task verb clause.
+
+        Handles phrasing like ``predict the urgency level and sentiment`` by
+        splitting the clause after the first task verb on ``and``/commas and
+        normalizing each segment (``urgency level`` -> ``urgency``). Returns
+        fewer than two names when the text does not clearly enumerate
+        multiple outputs; callers then fall back to the single-output
+        keyword heuristic.
+        """
+        match = _OUTPUT_CLAUSE_PATTERN.search(text)
+        if match is None:
+            return []
+        reserved = {name.lower() for name in reserved}
+        names: list[str] = []
+        for segment in re.split(
+            r"\s+and\s+|,", match.group("clause"), flags=re.IGNORECASE
+        ):
+            words = re.findall(r"[a-zA-Z]+", segment.lower())
+            while words and words[0] in _OUTPUT_LEAD_WORDS:
+                words.pop(0)
+            while len(words) > 1 and words[-1] in _OUTPUT_TRAILING_MODIFIERS:
+                words.pop()
+            if not 1 <= len(words) <= 2:
+                continue
+            name = " ".join(words)
+            if name in reserved:
+                continue
+            names.append(name)
+        return list(dict.fromkeys(names))
 
     @staticmethod
     def _is_placeholder_spec(spec: SignatureSpec) -> bool:

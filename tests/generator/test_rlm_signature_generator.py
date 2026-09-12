@@ -202,6 +202,25 @@ class TestGroundedFallback:
         assert [field.name for field in spec.outputs] == ["summary"]
         SignatureBuilder.build(spec)
 
+    def test_prompt_fallback_extracts_enumerated_outputs(self) -> None:
+        spec = RLMSignatureGenerator._fallback_from_prompt(
+            "Given a customer support ticket with {message},"
+            "predict the urgency level and sentiment."
+        )
+        assert [field.name for field in spec.inputs] == ["message"]
+        assert [field.name for field in spec.outputs] == ["urgency", "sentiment"]
+        SignatureBuilder.build(spec)
+
+    def test_prompt_fallback_uses_extracted_output_without_keyword_signal(
+        self,
+    ) -> None:
+        spec = RLMSignatureGenerator._fallback_from_prompt(
+            "Given {ticket}, predict the urgency level."
+        )
+        assert [field.name for field in spec.inputs] == ["ticket"]
+        assert [field.name for field in spec.outputs] == ["urgency"]
+        SignatureBuilder.build(spec)
+
 
 class TestSDKDetection:
     def test_detects_openai_sdk_format(self) -> None:
