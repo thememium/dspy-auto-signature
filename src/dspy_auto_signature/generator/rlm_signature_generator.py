@@ -154,15 +154,17 @@ class RLMSignatureGenerator(dspy.Module):
         *,
         mode: Literal["auto", "fast", "cot", "rlm"] = "auto",
     ) -> SignatureSpec:
-        """Prefer deterministic structure; run the LLM architect only when needed.
+        """Prefer deterministic structure; otherwise design with ChainOfThought.
 
-        With ``mode="fast"``, structureless prompts also skip the RLM and
-        receive the deterministic fallback (inferred input/output names)
-        instead of the richer RLM-designed signature. With ``mode="cot"``,
-        a single ChainOfThought call designs every signature — LLM-driven
-        quality without the RLM's sandbox or iterative loop. With
-        ``mode="rlm"``, the RLM architect designs every signature, including
-        inputs that the deterministic structural paths could handle.
+        With ``mode="auto"`` (default), structured inputs (placeholders, SDK
+        message arrays, datasets) are designed deterministically and
+        structureless prompts fall back to a single ChainOfThought call —
+        no sandbox or iterative loop. With ``mode="fast"``, structureless
+        prompts also skip the LLM and receive the deterministic fallback
+        (inferred input/output names). With ``mode="cot"``, ChainOfThought
+        designs every signature. With ``mode="rlm"``, the recursive RLM
+        architect designs every signature, including inputs that the
+        deterministic structural paths could handle.
         """
         if self._is_sdk_format(prompt):
             if mode == "cot":
@@ -173,7 +175,7 @@ class RLMSignatureGenerator(dspy.Module):
                     return spec
                 if mode == "fast":
                     return self._fallback_from_context(self._build_context(prompt))
-            return self._forward_sdk(prompt)
+            return self._forward_sdk(prompt, cot=mode != "rlm")
 
         if mode == "cot":
             return self._forward_cot(prompt)
@@ -195,13 +197,14 @@ class RLMSignatureGenerator(dspy.Module):
             if context["source_kind"] == "dataset"
             else Config.get_lm()
         )
+        module = self.rlm if mode == "rlm" else self.cot
         try:
             with dspy.settings.context(lm=lm):
-                result = self.rlm(**context)
+                result = module(**context)
             return self._draft_to_spec(result.draft)
         except Exception as exc:
             logger.warning(
-                "Unified RLM signature generation failed; using grounded fallback: %s",
+                "Unified LLM signature generation failed; using grounded fallback: %s",
                 exc,
             )
             return self._fallback_from_context(context)
