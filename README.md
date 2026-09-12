@@ -4,7 +4,7 @@
   <h3 align="center">AutoSignature</h3>
 
   <p align="center">
-    Generate typed <a href="https://dspy.ai"><code>dspy.Signature</code></a> classes with <code>dspy.RLM</code>.
+    Generate typed <a href="https://dspy.ai"><code>dspy.Signature</code></a> classes from prompts, SDK messages, or datasets.
     <br />
     <a href="#table-of-contents"><strong>Explore the Documentation »</strong></a>
     <br />
@@ -36,19 +36,17 @@
 
 ## About
 
-AutoSignature inspects a prompt or dataset and generates a complete
-`dspy.Signature` subclass. Structured inputs are designed deterministically;
-structureless prompts get a single LLM call (`dspy.ChainOfThought`) by default,
-with the heavier `dspy.RLM` architect available via `mode="rlm"`.
+AutoSignature inspects a prompt, SDK message array, or dataset and generates a
+complete `dspy.Signature` subclass. Structured inputs are designed
+deterministically; anything else gets a single LLM call (`dspy.ChainOfThought`).
+No sandbox, no Deno, no iterative loop — one call and you're done.
 
 - **Automatic signature design** — Infers instructions, inputs, outputs, field descriptions, and types
 - **Dataset-aware generation** — Profiles DataFrame columns, distributions, and representative rows
 - **Ready to use** — Returns signatures compatible with `dspy.Predict`, `dspy.ChainOfThought`, and other DSPy modules
 - **Exportable** — Renders generated signatures as Python source with `to_source()`
 
-Requires **Python 3.12+** and **DSPy 3.2+**. [Deno](https://deno.com/) is only
-needed for `mode="rlm"` (sandboxed execution); the other modes never run
-generated code.
+Requires **Python 3.12+** and **DSPy 3.2+**.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -78,10 +76,7 @@ pip install dspy-auto-signature
 import dspy
 import dspy_auto_signature as das
 
-das.configure(
-    lm=dspy.LM("openai/gpt-4o"),
-    sub_lm=dspy.LM("openai/gpt-4o-mini"),
-)
+das.configure(lm=dspy.LM("openrouter/openai/gpt-oss-120b"))
 
 signature = das.generate(
     "Given an article, produce a concise summary and three key takeaways."
@@ -89,7 +84,7 @@ signature = das.generate(
 
 print(signature.to_source())
 
-dspy.configure(lm=dspy.LM("openai/gpt-4o-mini"))
+dspy.configure(lm=dspy.LM("openrouter/openai/gpt-oss-120b"))
 summarize = dspy.ChainOfThought(signature.to_signature())
 result = summarize(article="...")
 ```
@@ -111,10 +106,7 @@ conversation history directly — no conversion needed.
 import dspy
 import dspy_auto_signature as das
 
-das.configure(
-    lm=dspy.LM("openai/gpt-4o"),
-    sub_lm=dspy.LM("openai/gpt-4o-mini"),
-)
+das.configure(lm=dspy.LM("openrouter/openai/gpt-oss-120b"))
 
 messages = [
     {"role": "system", "content": "You are a technical writer who produces clear documentation."},
@@ -152,7 +144,7 @@ signature = das.generate(contents)
 Any SDK that produces OpenAI-style `[{"role": "...", "content": "..."}]` arrays
 works out of the box — including LiteLLM, Azure OpenAI, Ollama, and vLLM.
 
-See [`example_sdk.py`](example_sdk.py) for a complete runnable example.
+See [`examples/sdk.py`](examples/sdk.py) for a complete runnable example.
 
 <!-- DATAFRAME EXAMPLE -->
 
@@ -172,19 +164,16 @@ Or with pip:
 pip install "dspy-auto-signature[pandas]"
 ```
 
-Datasets are profiled before generation so the LLM architect can use column
-names, types, distributions, and representative rows when designing the
-signature.
+Datasets are profiled before generation so the signature reflects your column
+names, types, and representative rows. Add `mode="cot"` to let an LLM design
+the signature from the profile instead.
 
 ```python
 import dspy
 import pandas as pd
 import dspy_auto_signature as das
 
-das.configure(
-    lm=dspy.LM("openai/gpt-4o"),
-    sub_lm=dspy.LM("openai/gpt-4o-mini"),
-)
+das.configure(lm=dspy.LM("openrouter/openai/gpt-oss-120b"))
 
 tickets = pd.DataFrame(
     [
@@ -236,13 +225,13 @@ Generates a `dspy.Signature` subclass from prompt material or tabular data.
 
 | Mode | Behavior |
 | --- | --- |
-| `auto` | Deterministic structural design first; falls back to a single `dspy.ChainOfThought` call for structureless prompts |
-| `fast` | Fully deterministic — never contacts an LLM for signature design |
-| `cot` | LLM-driven middle tier: a single `dspy.ChainOfThought` call designs the signature. No Deno sandbox or recursive loop |
-| `rlm` | Full `dspy.RLM` architect: sandboxed exploration with recursive sub-queries. Slowest, but richest signatures |
+| `auto` | **Default.** Deterministic design for structured inputs (placeholders, SDK arrays, datasets); a single `dspy.ChainOfThought` call for everything else |
+| `fast` | Fully deterministic — never contacts an LLM |
+| `cot` | Always uses a single `dspy.ChainOfThought` call, even for structured inputs |
+| `rlm` | Heavy recursive `dspy.RLM` architect (sandboxed exploration; requires [Deno](https://deno.com/)) |
 
-Use `cot` when you want the LLM architect on structured inputs too, and `rlm`
-when you want maximum quality on complex prompts (requires Deno).
+`auto` is right for almost everything. Pass `mode="cot"` or `mode="rlm"` when
+you want the LLM to design even structured inputs.
 
 ### `configure(lm=None, dataset_lm=None, sub_lm=None)`
 
