@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.1.4 (2026-09-12)
+
+[Compare changes](https://github.com/thememium/dspy-auto-signature/compare/v0.1.3...v0.1.4)
+
+### 🚀 Enhancements
+
+- Enhance RLM signature generation with fast paths and output extraction (#5) (#5) ([6860327](https://github.com/thememium/dspy-auto-signature/commit/6860327214bf664b5d2fcf0956e43681493a4cc2))
+- Enhance test coverage and improve test suite organization (#4) (#4) ([f72d922](https://github.com/thememium/dspy-auto-signature/commit/f72d92299966103bda715b7f18a945edb2b860ae))
+
+### Contributors
+
+- Edward Boswell <thememium@gmail.com>
+
 ## v0.1.3 (2026-06-06)
 
 [Compare changes](https://github.com/thememium/dspy-auto-signature/compare/v0.1.2...v0.1.3)
