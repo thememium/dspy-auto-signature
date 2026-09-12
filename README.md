@@ -36,16 +36,19 @@
 
 ## About
 
-AutoSignature uses `dspy.RLM` to inspect a prompt or dataset and generate a
-complete `dspy.Signature` subclass.
+AutoSignature inspects a prompt or dataset and generates a complete
+`dspy.Signature` subclass. Structured inputs are designed deterministically;
+structureless prompts get a single LLM call (`dspy.ChainOfThought`) by default,
+with the heavier `dspy.RLM` architect available via `mode="rlm"`.
 
 - **Automatic signature design** — Infers instructions, inputs, outputs, field descriptions, and types
 - **Dataset-aware generation** — Profiles DataFrame columns, distributions, and representative rows
 - **Ready to use** — Returns signatures compatible with `dspy.Predict`, `dspy.ChainOfThought`, and other DSPy modules
 - **Exportable** — Renders generated signatures as Python source with `to_source()`
 
-Requires **Python 3.12+**, **DSPy 3.2+**, and
-[Deno](https://deno.com/) for the RLM sandbox.
+Requires **Python 3.12+** and **DSPy 3.2+**. [Deno](https://deno.com/) is only
+needed for `mode="rlm"` (sandboxed execution); the other modes never run
+generated code.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -169,8 +172,9 @@ Or with pip:
 pip install "dspy-auto-signature[pandas]"
 ```
 
-Datasets are profiled before generation so the RLM can use column names,
-types, distributions, and representative rows when designing the signature.
+Datasets are profiled before generation so the LLM architect can use column
+names, types, distributions, and representative rows when designing the
+signature.
 
 ```python
 import dspy
@@ -216,6 +220,7 @@ Generates a `dspy.Signature` subclass from prompt material or tabular data.
 | `task_hint` | `str \| None` | Optional task description, especially useful for identifying dataset targets |
 | `input_hints` | `dict[str, str] \| None` | Input field descriptions to supplement or override generated descriptions |
 | `output_hints` | `dict[str, str] \| None` | Output field descriptions to supplement or override generated descriptions |
+| `mode` | `"auto" \| "fast" \| "cot" \| "rlm"` | Generation strategy. Defaults to `auto` — see below |
 
 **Supported input formats:**
 
@@ -227,15 +232,27 @@ Generates a `dspy.Signature` subclass from prompt material or tabular data.
 - pandas DataFrames, polars DataFrames / LazyFrames
 - `list[dict]`, `list[dspy.Example]`, single `dspy.Example`
 
+**Generation modes** (`mode` parameter):
+
+| Mode | Behavior |
+| --- | --- |
+| `auto` | Deterministic structural design first; falls back to a single `dspy.ChainOfThought` call for structureless prompts |
+| `fast` | Fully deterministic — never contacts an LLM for signature design |
+| `cot` | LLM-driven middle tier: a single `dspy.ChainOfThought` call designs the signature. No Deno sandbox or recursive loop |
+| `rlm` | Full `dspy.RLM` architect: sandboxed exploration with recursive sub-queries. Slowest, but richest signatures |
+
+Use `cot` when you want the LLM architect on structured inputs too, and `rlm`
+when you want maximum quality on complex prompts (requires Deno).
+
 ### `configure(lm=None, dataset_lm=None, sub_lm=None)`
 
 Configures the models used during signature generation.
 
 | Parameter | Type | Description |
 | --- | --- | --- |
-| `lm` | `dspy.LM \| None` | Default RLM model. Falls back to the model configured through `dspy.configure` |
-| `dataset_lm` | `dspy.LM \| None` | Optional RLM model override for dataset sources |
-| `sub_lm` | `dspy.LM \| None` | Optional model used for recursive sub-queries |
+| `lm` | `dspy.LM \| None` | Default generation model. Falls back to the model configured through `dspy.configure` |
+| `dataset_lm` | `dspy.LM \| None` | Optional generation model override for dataset sources |
+| `sub_lm` | `dspy.LM \| None` | Optional cheap inner model used by `mode="rlm"` sub-queries |
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 

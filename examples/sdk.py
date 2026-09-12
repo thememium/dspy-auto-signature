@@ -9,7 +9,7 @@ Prerequisites:
     uv sync  # or: pip install -e .
 
 Run:
-    python example_sdk.py
+    python examples/sdk.py
 """
 
 from __future__ import annotations
@@ -45,11 +45,11 @@ def main() -> None:
     sig_openai = das.generate(openai_messages)
 
     with open(
-        "examples/output/example_openai_signature.py", "w", encoding="utf-8"
+        "examples/output/example_sdk_openai_signature.py", "w", encoding="utf-8"
     ) as f:
         f.write(sig_openai.to_source())
 
-    print("Saved OpenAI signature to output/example_openai_signature.py")
+    print("Saved OpenAI signature to output/example_sdk_openai_signature.py")
     print(f"  Inputs:  {list(sig_openai.input_fields.keys())}")
     print(f"  Outputs: {list(sig_openai.output_fields.keys())}")
 
@@ -64,11 +64,11 @@ def main() -> None:
     sig_anthropic = das.generate(anthropic_messages)
 
     with open(
-        "examples/output/example_anthropic_signature.py", "w", encoding="utf-8"
+        "examples/output/example_sdk_anthropic_signature.py", "w", encoding="utf-8"
     ) as f:
         f.write(sig_anthropic.to_source())
 
-    print("\nSaved Anthropic signature to output/example_anthropic_signature.py")
+    print("\nSaved Anthropic signature to output/example_sdk_anthropic_signature.py")
     print(f"  Inputs:  {list(sig_anthropic.input_fields.keys())}")
     print(f"  Outputs: {list(sig_anthropic.output_fields.keys())}")
 
@@ -86,13 +86,53 @@ def main() -> None:
     sig_gemini = das.generate(gemini_contents)
 
     with open(
-        "examples/output/example_gemini_signature.py", "w", encoding="utf-8"
+        "examples/output/example_sdk_gemini_signature.py", "w", encoding="utf-8"
     ) as f:
         f.write(sig_gemini.to_source())
 
-    print("\nSaved Gemini signature to output/example_gemini_signature.py")
+    print("\nSaved Gemini signature to output/example_sdk_gemini_signature.py")
     print(f"  Inputs:  {list(sig_gemini.input_fields.keys())}")
     print(f"  Outputs: {list(sig_gemini.output_fields.keys())}")
+
+    # --- ChainOfThought mode ---
+    # Structured SDK arrays like these are designed deterministically under
+    # the default "auto" mode. mode="cot" forces a single ChainOfThought
+    # call to design the signature from the message semantics instead.
+    sig_cot = das.generate(openai_messages, mode="cot")
+
+    with open(
+        "examples/output/example_sdk_openai_cot_signature.py", "w", encoding="utf-8"
+    ) as f:
+        f.write(sig_cot.to_source())
+
+    print("\nSaved OpenAI CoT signature to output/example_sdk_openai_cot_signature.py")
+    print(f"  Inputs:  {list(sig_cot.input_fields.keys())}")
+    print(f"  Outputs: {list(sig_cot.output_fields.keys())}")
+
+    sig_anthropic_cot = das.generate(anthropic_messages, mode="cot")
+
+    with open(
+        "examples/output/example_sdk_anthropic_cot_signature.py", "w", encoding="utf-8"
+    ) as f:
+        f.write(sig_anthropic_cot.to_source())
+
+    print(
+        "\nSaved Anthropic CoT signature to"
+        " output/example_sdk_anthropic_cot_signature.py"
+    )
+    print(f"  Inputs:  {list(sig_anthropic_cot.input_fields.keys())}")
+    print(f"  Outputs: {list(sig_anthropic_cot.output_fields.keys())}")
+
+    sig_gemini_cot = das.generate(gemini_contents, mode="cot")
+
+    with open(
+        "examples/output/example_sdk_gemini_cot_signature.py", "w", encoding="utf-8"
+    ) as f:
+        f.write(sig_gemini_cot.to_source())
+
+    print("\nSaved Gemini CoT signature to output/example_sdk_gemini_cot_signature.py")
+    print(f"  Inputs:  {list(sig_gemini_cot.input_fields.keys())}")
+    print(f"  Outputs: {list(sig_gemini_cot.output_fields.keys())}")
 
 
 if __name__ == "__main__":

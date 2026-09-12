@@ -155,6 +155,9 @@ class TestGeneratePipeline:
         das.generate("Summarize this", mode="fast")
         assert gen.mode == "fast"
 
+        das.generate("Summarize this", mode="cot")
+        assert gen.mode == "cot"
+
         das.generate("Summarize this", mode="rlm")
         assert gen.mode == "rlm"
 

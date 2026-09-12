@@ -1,7 +1,11 @@
-"""Dataset-driven (slow path) example for dspy-auto-signature.
+"""Dataset-driven example for dspy-auto-signature.
 
 Demonstrates ``generate()`` with a pandas DataFrame and a list of dicts.
-Requires Deno to be installed for the RLM (Recursive Language Model) sandbox:
+Under the default ``auto`` mode, dataset signatures are designed
+deterministically from the column profile — no LLM call. Passing
+``mode="cot"`` instead asks a single ``dspy.ChainOfThought`` call to design
+the signature from the same profile; ``mode="rlm"`` opts into the recursive
+RLM architect. Only ``mode="rlm"`` needs Deno installed:
 
     brew install deno   # macOS
 
@@ -10,10 +14,12 @@ Prerequisites:
     uv sync --extra dataset  # or: pip install -e ".[dataset]"
 
 Run:
-    python example_dataset.py
+    python examples/dataset.py
 """
 
 from __future__ import annotations
+
+from typing import Any
 
 import dspy
 
@@ -26,17 +32,35 @@ lm = dspy.LM(
 )
 
 
-def from_dataframe_example() -> None:
-    """Generate a signature from a pandas DataFrame (slow path)."""
+def _support_ticket_rows() -> list[dict[str, str]]:
+    """Build the example support-ticket records."""
+    return [
+        {
+            "message": "The server room AC is out and equipment is overheating.",
+            "urgency": "high",
+            "sentiment": "negative",
+        },
+        {
+            "message": "Can someone clean conference room B next week?",
+            "urgency": "low",
+            "sentiment": "neutral",
+        },
+        {
+            "message": "Thanks for fixing the VPN, works perfectly now!",
+            "urgency": "medium",
+            "sentiment": "positive",
+        },
+    ]
+
+
+def _support_tickets_df() -> Any:
+    """Build the example support-ticket DataFrame (pandas optional)."""
     try:
         import pandas as pd
-    except ImportError:
-        print("pandas not installed. Run: uv sync --extra dataset")
-        return
+    except ImportError as exc:
+        raise ImportError("pandas not installed. Run: uv sync --extra dataset") from exc
 
-    das.configure(lm=lm)
-
-    df = pd.DataFrame(
+    return pd.DataFrame(
         {
             "message": [
                 "The server room AC is out and equipment is overheating.",
@@ -48,6 +72,12 @@ def from_dataframe_example() -> None:
             "sentiment": ["negative", "neutral", "positive", "negative"],
         },
     )
+
+
+def from_dataframe_example() -> None:
+    """Generate a signature from a pandas DataFrame (deterministic path)."""
+    das.configure(lm=lm)
+    df = _support_tickets_df()
 
     sig = das.generate(
         df,
@@ -66,27 +96,34 @@ def from_dataframe_example() -> None:
         f.write(sig.to_source())
 
 
+def cot_dataframe_example() -> None:
+    """Generate the same signature with one ChainOfThought call (mode="cot")."""
+    das.configure(lm=lm)
+    df = _support_tickets_df()
+
+    sig = das.generate(
+        df,
+        task_hint="Classify support tickets by urgency and sentiment",
+        mode="cot",
+    )
+
+    print("\n=== DataFrame → Signature (ChainOfThought mode) ===")
+    print(f"Generated: {sig}")
+    print(f"Docstring: {sig.__doc__}")
+    print(f"Inputs:    {list(sig.input_fields.keys())}")
+    print(f"Outputs:   {list(sig.output_fields.keys())}")
+
+    with open(
+        "examples/output/example_dataset_cot_signature.py", "w", encoding="utf-8"
+    ) as f:
+        f.write(sig.to_source())
+
+
 def from_list_example() -> None:
-    """Generate a signature from a list of dicts (slow path)."""
+    """Generate a signature from a list of dicts (deterministic path)."""
     das.configure(lm=lm)
 
-    rows = [
-        {
-            "message": "The server room AC is out and equipment is overheating.",
-            "urgency": "high",
-            "sentiment": "negative",
-        },
-        {
-            "message": "Can someone clean conference room B next week?",
-            "urgency": "low",
-            "sentiment": "neutral",
-        },
-        {
-            "message": "Thanks for fixing the VPN, works perfectly now!",
-            "urgency": "medium",
-            "sentiment": "positive",
-        },
-    ]
+    rows = _support_ticket_rows()
 
     sig = das.generate(
         rows,
@@ -103,9 +140,34 @@ def from_list_example() -> None:
         f.write(sig.to_source())
 
 
+def cot_list_example() -> None:
+    """Generate the same signature with one ChainOfThought call (mode="cot")."""
+    das.configure(lm=lm)
+    rows = _support_ticket_rows()
+
+    sig = das.generate(
+        rows,
+        task_hint="Classify support tickets by urgency and sentiment",
+        mode="cot",
+    )
+
+    print("\n=== List of dicts → Signature (ChainOfThought mode) ===")
+    print(f"Generated: {sig}")
+    print(f"Docstring: {sig.__doc__}")
+    print(f"Inputs:    {list(sig.input_fields.keys())}")
+    print(f"Outputs:   {list(sig.output_fields.keys())}")
+
+    with open(
+        "examples/output/example_list_cot_signature.py", "w", encoding="utf-8"
+    ) as f:
+        f.write(sig.to_source())
+
+
 def main() -> None:
     from_dataframe_example()
+    cot_dataframe_example()
     from_list_example()
+    cot_list_example()
 
 
 if __name__ == "__main__":
