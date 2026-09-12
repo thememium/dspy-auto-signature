@@ -142,22 +142,31 @@ class RLMSignatureGenerator(dspy.Module):
             verbose=verbose,
             interpreter=interpreter,
         )
+        # Lightweight LLM-driven alternative: one ChainOfThought call per
+        # generation, no sandbox or recursive loop. Shares the same signature
+        # contracts as the RLM paths.
+        self.cot = dspy.ChainOfThought(GenerateSignature)
+        self.cot_sdk = dspy.ChainOfThought(GenerateSDKSignature)
 
     def forward(
         self,
         prompt: ParsedPrompt,
         *,
-        mode: Literal["auto", "fast", "rlm"] = "auto",
+        mode: Literal["auto", "fast", "cot", "rlm"] = "auto",
     ) -> SignatureSpec:
-        """Prefer deterministic structure; run the RLM only when structure is thin.
+        """Prefer deterministic structure; run the LLM architect only when needed.
 
         With ``mode="fast"``, structureless prompts also skip the RLM and
         receive the deterministic fallback (inferred input/output names)
-        instead of the richer RLM-designed signature. With ``mode="rlm"``,
-        the RLM architect designs every signature, including inputs that the
-        deterministic structural paths could handle.
+        instead of the richer RLM-designed signature. With ``mode="cot"``,
+        a single ChainOfThought call designs every signature — LLM-driven
+        quality without the RLM's sandbox or iterative loop. With
+        ``mode="rlm"``, the RLM architect designs every signature, including
+        inputs that the deterministic structural paths could handle.
         """
         if self._is_sdk_format(prompt):
+            if mode == "cot":
+                return self._forward_sdk(prompt, cot=True)
             if mode != "rlm":
                 spec = self._structural_sdk_spec(prompt)
                 if spec is not None:
@@ -165,6 +174,9 @@ class RLMSignatureGenerator(dspy.Module):
                 if mode == "fast":
                     return self._fallback_from_context(self._build_context(prompt))
             return self._forward_sdk(prompt)
+
+        if mode == "cot":
+            return self._forward_cot(prompt)
 
         context = self._build_context(prompt)
         if mode != "rlm":
@@ -194,18 +206,38 @@ class RLMSignatureGenerator(dspy.Module):
             )
             return self._fallback_from_context(context)
 
-    def _forward_sdk(self, prompt: ParsedPrompt) -> SignatureSpec:
+    def _forward_cot(self, prompt: ParsedPrompt) -> SignatureSpec:
+        """Design the signature with one ChainOfThought call, RLM-free."""
+        context = self._build_context(prompt)
+        lm = (
+            Config.get_dataset_lm()
+            if context["source_kind"] == "dataset"
+            else Config.get_lm()
+        )
+        try:
+            with dspy.settings.context(lm=lm):
+                result = self.cot(**context)
+            return self._draft_to_spec(result.draft)
+        except Exception as exc:
+            logger.warning(
+                "CoT signature generation failed; using grounded fallback: %s",
+                exc,
+            )
+            return self._fallback_from_context(context)
+
+    def _forward_sdk(self, prompt: ParsedPrompt, *, cot: bool = False) -> SignatureSpec:
         context = self._build_sdk_context(prompt)
         lm = Config.get_lm()
+        module = self.cot_sdk if cot else self.sdk_rlm
 
         try:
             with dspy.settings.context(lm=lm):
-                result = self.sdk_rlm(**context)
+                result = module(**context)
             spec = self._draft_to_spec(result.draft)
             return self._sanitize_sdk_spec(spec)
         except Exception as exc:
             logger.warning(
-                "SDK RLM signature generation failed; using standard fallback: %s",
+                "SDK signature generation failed; using standard fallback: %s",
                 exc,
             )
             return self._fallback_from_context(self._build_context(prompt))
