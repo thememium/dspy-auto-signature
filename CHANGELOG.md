@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.1.6 (2026-09-12)
+
+[Compare changes](https://github.com/thememium/dspy-auto-signature/compare/v0.1.5...v0.1.6)
+
+### 📖 Documentation
+
+- update README to reflect new modes, examples, and defaults ([c82055a](https://github.com/thememium/dspy-auto-signature/commit/c82055a40c1dcab434190b84aec5d33cec67e510))
+
+### Contributors
+
+- Edward Boswell <thememium@gmail.com>
+
 ## v0.1.5 (2026-09-12)
 
 [Compare changes](https://github.com/thememium/dspy-auto-signature/compare/v0.1.4...v0.1.5)
