@@ -216,6 +216,7 @@ Generates a `dspy.Signature` subclass from prompt material or tabular data.
 | `task_hint` | `str \| None` | Optional task description, especially useful for identifying dataset targets |
 | `input_hints` | `dict[str, str] \| None` | Input field descriptions to supplement or override generated descriptions |
 | `output_hints` | `dict[str, str] \| None` | Output field descriptions to supplement or override generated descriptions |
+| `mode` | `"auto" \| "fast" \| "cot" \| "rlm"` | Generation strategy. Defaults to `auto` — see below |
 
 **Supported input formats:**
 
@@ -226,6 +227,18 @@ Generates a `dspy.Signature` subclass from prompt material or tabular data.
 - LiteLLM / Azure OpenAI / Ollama / vLLM message arrays
 - pandas DataFrames, polars DataFrames / LazyFrames
 - `list[dict]`, `list[dspy.Example]`, single `dspy.Example`
+
+**Generation modes** (`mode` parameter):
+
+| Mode | Behavior |
+| --- | --- |
+| `auto` | Deterministic structural design first; falls back to the RLM architect for structureless prompts |
+| `fast` | Fully deterministic — never contacts an LLM for signature design |
+| `cot` | LLM-driven middle tier: a single `dspy.ChainOfThought` call designs the signature. No Deno sandbox or recursive loop |
+| `rlm` | Full `dspy.RLM` architect: sandboxed exploration with recursive sub-queries. Slowest, but richest signatures |
+
+Use `cot` when you want an LLM-designed signature without installing Deno or paying for the RLM's
+iterative loop, and `rlm` when you want maximum quality on complex prompts.
 
 ### `configure(lm=None, dataset_lm=None, sub_lm=None)`
 
