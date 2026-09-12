@@ -94,8 +94,9 @@ def from_prompt(
     """Generate a DSPy Signature class from an arbitrary prompt.
 
     Accepts raw strings, SDK message arrays (OpenAI, Anthropic, Google,
-    LiteLLM), or any combination. Uses the same unified RLM architect as
-    :func:`from_dataset` to inspect the complete task context and infer
+    LiteLLM), or any combination. Structured inputs are designed
+    deterministically; structureless prompts fall back to a single
+    ChainOfThought call to inspect the complete task context and infer
     fields, types, and instructions.
 
     For data-grounded signatures from tabular inputs, use :func:`from_dataset`.
@@ -110,9 +111,12 @@ def from_prompt(
             - Any combination the parser layer can normalise
         input_hints: Optional mapping of field-name → description for known inputs.
         output_hints: Optional mapping of field-name → description for known outputs.
-        mode: ``auto`` (default) uses the RLM architect for structureless
-            prompts; ``fast`` never runs the RLM; ``cot`` designs every
-            signature with a single ChainOfThought call instead of the RLM.
+        mode: ``auto`` (default) designs structured inputs deterministically
+            and falls back to a single ChainOfThought call for structureless
+            prompts; ``fast`` never contacts an LLM for design; ``cot``
+            designs every signature with a single ChainOfThought call;
+            ``rlm`` designs every signature with the recursive RLM architect
+            (requires Deno).
 
     Returns:
         A fresh ``dspy.Signature`` subclass ready for use in ``dspy.Predict``,
@@ -154,11 +158,11 @@ def from_dataset(
     """Generate a DSPy Signature class from a tabular dataset.
 
     Profiles the dataset's columns (dtypes, null rates, cardinality, sample
-    values, dtype-specific stats) and passes that complete context to the same
-    unified :class:`dspy.RLM` architect used by :func:`from_prompt`.
+    values, dtype-specific stats) and passes that complete context to the LLM
+    architect used by :func:`from_prompt`.
 
-    Requires **Deno** to be installed (RLM uses a Deno-sandboxed Pyodide
-    REPL). See the README for install instructions.
+    Deno is only required when using ``mode="rlm"`` (the RLM's Deno-sandboxed
+    Pyodide REPL); the other modes never execute generated code.
 
     Args:
         data: The dataset. Accepts ``list[dict]``, ``pandas.DataFrame``,
@@ -233,12 +237,13 @@ def generate(
         input_hints: Field names mapped to improved input descriptions.
         output_hints: Field names mapped to improved output descriptions.
         mode: ``auto`` (default) designs structured inputs deterministically
-            and falls back to the RLM for structureless prompts; ``fast``
-            never runs the RLM, so plain prompts receive the deterministic
-            fallback signature instead of the richer RLM-designed one;
-            ``cot`` designs every signature with a single ChainOfThought
-            call — LLM-driven without the RLM's sandbox (no Deno needed);
-            ``rlm`` lets the RLM architect design every signature.
+            and falls back to a single ChainOfThought call for structureless
+            prompts; ``fast`` never contacts an LLM for design, so plain
+            prompts receive the deterministic fallback signature instead of
+            the richer LLM-designed one; ``cot`` designs every signature with
+            a single ChainOfThought call — LLM-driven without the RLM's
+            sandbox (no Deno needed); ``rlm`` lets the RLM architect design
+            every signature.
 
     Returns:
         A fresh ``dspy.Signature`` subclass.
