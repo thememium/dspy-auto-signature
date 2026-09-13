@@ -39,7 +39,13 @@ class ProposedSignature(BaseModel):
     name: str = Field(
         description="Specific PascalCase Signature class name ending with 'Signature'"
     )
-    instructions: str = Field(description="Specific task doctrine and instructions")
+    instructions: str = Field(
+        description=(
+            "Rewritten, generalized task doctrine for the runtime model. "
+            "Never a verbatim copy of the source prompt: no placeholder markers, "
+            "JSON format templates, section headers, examples, or separators."
+        )
+    )
     inputs: list[ProposedField] = Field(description="All required input fields")
     outputs: list[ProposedField] = Field(description="All required output fields")
 
@@ -70,8 +76,17 @@ class GenerateSignature(dspy.Signature):
        ``output``, ``input_text``, ``output_text``, ``data``, ``result``, or
        ``AutoSignature``. The ``input`` and ``output`` keys in example dicts are
        structural labels, not field name suggestions.
-    7. Write useful doctrine: specific instructions describing the task, constraints,
-       and expected output behavior.
+   7. Write the ``instructions`` as your own concise task doctrine: what the
+      runtime model must do, the key constraints, and the expected output
+      behavior. NEVER copy the source prompt verbatim into ``instructions``.
+      The prompt's literal scaffolding — ``{}`` and ``{placeholder}`` markers,
+      ``**Section**`` headers, JSON format templates, "answer in this exact
+      format" blocks, example payloads, and separators such as ``---`` — must
+      NOT appear in ``instructions``. DSPy renders inputs and outputs
+      automatically as typed fields, so formatting directives and field
+      listings in the prompt are redundant. Express each placeholder or
+      template slot as an input or output field (rules 4 and 9), and keep
+      ``instructions`` abstract enough to hold for any runtime values.
     8. Use the most specific practical types, including literal types for known
        categorical outputs.
        Express literal types as ``literal low, medium, high`` without JSON brackets,
@@ -95,7 +110,8 @@ class GenerateSignature(dspy.Signature):
 
     - ``name``: specific PascalCase class name ending with ``Signature``
       (for example ``TicketClassificationSignature``)
-    - ``instructions``: specific task doctrine
+    - ``instructions``: rewritten task doctrine, never a verbatim copy of the
+      source prompt
     - ``inputs``: field objects containing name, description, and type
     - ``outputs``: field objects containing name, description, and type (plus
       ``literal_values`` for enumerated outputs and ``pydantic_model`` for
@@ -178,7 +194,11 @@ class GenerateSDKSignature(dspy.Signature):
     3. Read all assistant messages to understand the expected output format and fields.
     4. Combine these insights into a coherent signature.
     5. Use semantic, specific field names. ``article`` is better than ``input_text``.
-    6. Write specific instructions that capture the task, constraints, and format.
+   6. Write the ``instructions`` as your own concise task doctrine. NEVER paste
+      message content verbatim into ``instructions``: no JSON format templates,
+      "answer in this exact format" blocks, placeholder markers, or separators.
+      Those become input and output fields; ``instructions`` states what the
+      runtime model must do and holds for any runtime values.
     7. Use specific types including literals for categorical outputs. For structured
        assistant outputs (multi-field JSON objects, nested records), set ``type`` to
        ``pydantic`` with a complete ``pydantic_model`` schema instead of a plain
@@ -186,7 +206,8 @@ class GenerateSDKSignature(dspy.Signature):
 
     ## Final submission
 
-    Call ``FINAL(draft=...)`` exactly once. The draft must contain:
+    - ``instructions``: rewritten task doctrine derived from system + user
+      context, never a verbatim copy of message content
 
     - ``name``: specific PascalCase class name ending with ``Signature``
       (for example ``TicketClassificationSignature``)
