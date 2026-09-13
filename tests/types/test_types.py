@@ -80,6 +80,30 @@ class TestSignatureSpec:
         assert spec.all_fields[0].name == "x"
         assert spec.all_fields[1].name == "y"
 
+    def test_name_appends_signature_suffix(self) -> None:
+        spec = SignatureSpec(
+            name="TicketClassification", instructions="Classify tickets"
+        )
+        assert spec.name == "TicketClassificationSignature"
+
+    def test_name_keeps_existing_signature_suffix(self) -> None:
+        spec = SignatureSpec(
+            name="TicketClassificationSignature", instructions="Classify tickets"
+        )
+        assert spec.name == "TicketClassificationSignature"
+
+    def test_name_suffix_match_is_case_insensitive(self) -> None:
+        spec = SignatureSpec(name="ticketclassifysignature", instructions="Test")
+        assert spec.name == "ticketclassifysignature"
+
+    def test_default_name_already_has_suffix(self) -> None:
+        spec = SignatureSpec(instructions="Test")
+        assert spec.name == "AutoSignature"
+
+    def test_blank_name_falls_back_to_default_with_suffix(self) -> None:
+        spec = SignatureSpec(name="   ", instructions="Test")
+        assert spec.name == "AutoSignature"
+
 
 def _contact_schema() -> dict:
     return {

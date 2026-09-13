@@ -59,7 +59,7 @@ class TestSignatureBuilder:
         Sig = SignatureBuilder.build(spec)
 
         assert issubclass(cast(type, Sig), dspy.Signature)
-        assert Sig.__name__ == "TestSummarizer"
+        assert Sig.__name__ == "TestSummarizerSignature"
         assert Sig.instructions == "Summarize text into bullet points."
         assert "text" in Sig.input_fields
         assert "summary" in Sig.output_fields
@@ -325,7 +325,7 @@ class TestSignatureBuilder:
         Sig = SignatureBuilder.build(spec)
         source = Sig.to_source()
 
-        assert "class SourceTest(dspy.Signature):" in source
+        assert "class SourceTestSignature(dspy.Signature):" in source
         assert 'text: str = dspy.InputField(desc="Input text")' in source
         assert 'result: list[str] = dspy.OutputField(desc="The result")' in source
         assert "import dspy" in source
@@ -354,7 +354,7 @@ class TestSignatureBuilder:
 
         source = SignatureBuilder.to_source(spec)
 
-        assert "class ClassMethodTest(dspy.Signature):" in source
+        assert "class ClassMethodTestSignature(dspy.Signature):" in source
         assert 'query: str = dspy.InputField(desc="Search query")' in source
         assert 'answer: str = dspy.OutputField(desc="The answer")' in source
 
@@ -682,7 +682,7 @@ class TestPydanticOutputFields:
         assert "from pydantic import BaseModel, Field" in source
         assert "from typing import Literal" in source
         assert source.index("class ContactRecord(BaseModel):") < source.index(
-            "class ContactExtractor(dspy.Signature):"
+            "class ContactExtractorSignature(dspy.Signature):"
         )
         assert "contact: ContactRecord" in source
         assert "summary: str" in source

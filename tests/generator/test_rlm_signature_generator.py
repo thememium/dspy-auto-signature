@@ -114,7 +114,7 @@ class TestDraftNormalization:
             ],
         }
         spec = RLMSignatureGenerator._draft_to_spec(draft)
-        assert spec.name == "TicketClassifier"
+        assert spec.name == "TicketClassifierSignature"
         assert spec.inputs[0].name == "ticket_message"
         assert spec.outputs[0].suggested_type == "literal low, high"
         SignatureBuilder.build(spec)
@@ -130,7 +130,7 @@ class TestDraftNormalization:
             ],
         }
         spec = RLMSignatureGenerator._draft_to_spec(draft)
-        assert spec.name == "TicketClassifier"
+        assert spec.name == "TicketClassifierSignature"
         assert spec.inputs[0].name == "ticket_message"
         assert spec.outputs[0].name == "class_value"
         SignatureBuilder.build(spec)
@@ -629,7 +629,7 @@ class TestStructuralFastPath:
         spec = generator.forward(prompt, mode="rlm")
 
         assert stub.calls == 1
-        assert spec.name == "ArticleSummarizer"
+        assert spec.name == "ArticleSummarizerSignature"
         SignatureBuilder.build(spec)
 
     def test_cot_mode_routes_sdk_input_through_cot(
@@ -652,7 +652,7 @@ class TestStructuralFastPath:
         spec = generator.forward(prompt, mode="cot")
 
         assert stub.calls == 1
-        assert spec.name == "ArticleSummarizer"
+        assert spec.name == "ArticleSummarizerSignature"
         SignatureBuilder.build(spec)
 
     def test_sdk_placeholders_become_input_fields(
@@ -892,7 +892,7 @@ class TestStructuralFastPath:
         spec = generator.forward(prompt)
 
         assert stub.calls == 1
-        assert spec.name == "ArticleSummarizer"
+        assert spec.name == "ArticleSummarizerSignature"
 
     def test_rlm_failure_falls_back_for_structureless_prompt(
         self, monkeypatch: pytest.MonkeyPatch
@@ -976,7 +976,7 @@ class TestForwardPromptPath:
         spec = generator.forward(prompt, mode="rlm")
 
         assert stub.kwargs["source_kind"] == "prompt"
-        assert spec.name == "ArticleSummarizer"
+        assert spec.name == "ArticleSummarizerSignature"
         assert [field.name for field in spec.inputs] == ["article"]
         SignatureBuilder.build(spec)
 
@@ -996,7 +996,7 @@ class TestForwardPromptPath:
 
         assert stub.calls == 1
         assert stub.kwargs["source_kind"] == "prompt"
-        assert spec.name == "ArticleSummarizer"
+        assert spec.name == "ArticleSummarizerSignature"
         SignatureBuilder.build(spec)
 
     def test_cot_mode_runs_cot_on_plain_prompt(
@@ -1015,7 +1015,7 @@ class TestForwardPromptPath:
 
         assert stub.calls == 1
         assert stub.kwargs["source_kind"] == "prompt"
-        assert spec.name == "ArticleSummarizer"
+        assert spec.name == "ArticleSummarizerSignature"
         SignatureBuilder.build(spec)
 
     def test_cot_mode_runs_cot_on_dataset(
@@ -1122,7 +1122,7 @@ class TestForwardPromptPath:
 
         assert stub.calls == 1
         assert stub.kwargs["source_kind"] == "dataset"
-        assert spec.name == "ArticleSummarizer"
+        assert spec.name == "ArticleSummarizerSignature"
         SignatureBuilder.build(spec)
 
     def test_forward_falls_back_when_rlm_fails(
@@ -1176,7 +1176,7 @@ class TestForwardSDKPath:
         spec = generator.forward(prompt)
 
         assert stub.kwargs["sdk_format"] == "openai"
-        assert spec.name == "ArticleSummarizer"
+        assert spec.name == "ArticleSummarizerSignature"
         SignatureBuilder.build(spec)
 
     def test_forward_sdk_falls_back_to_prompt_fallback(
