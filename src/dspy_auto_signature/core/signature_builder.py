@@ -9,8 +9,14 @@ from typing import TYPE_CHECKING, Any, Callable, Literal, Protocol, cast
 import dspy
 from pydantic.fields import FieldInfo
 
+from dspy_auto_signature.types.signature_spec import SchemaFieldType
+
 if TYPE_CHECKING:
-    from dspy_auto_signature.types.signature_spec import FieldSpec, SignatureSpec
+    from dspy_auto_signature.types.signature_spec import (
+        FieldSpec,
+        PydanticModelSchema,
+        SignatureSpec,
+    )
 
 logger = logging.getLogger(__name__)
 
@@ -158,8 +164,24 @@ def _collect_imports(fields: list[FieldSpec]) -> set[str]:
                 imports.add(f"from {module} import {t.__name__}")
 
     for field in fields:
+        if field.model_schema is not None:
+            continue
         _walk(field.resolved_type)
 
+    return imports
+
+
+def _collect_schema_imports(schemas: list[PydanticModelSchema]) -> set[str]:
+    """Collect imports needed by the generated Pydantic model classes."""
+    if not schemas:
+        return set()
+    imports: set[str] = {"from pydantic import BaseModel, Field"}
+    for schema in schemas:
+        for field in schema.fields:
+            if field.type is SchemaFieldType.LITERAL:
+                imports.add("from typing import Literal")
+            elif field.type is SchemaFieldType.DICT_STR_ANY:
+                imports.add("from typing import Any")
     return imports
 
 
@@ -172,8 +194,21 @@ def _generate_source(spec: SignatureSpec) -> str:
     lines: list[str] = ["import dspy"]
 
     all_fields: list[FieldSpec] = [*spec.inputs, *spec.outputs]
-    for imp in sorted(_collect_imports(all_fields)):
+    schemas: list[PydanticModelSchema] = [
+        schema
+        for field in all_fields
+        if field.model_schema is not None
+        for schema in field.model_schema.ordered_models()
+    ]
+    imports = _collect_imports(all_fields) | _collect_schema_imports(schemas)
+    for imp in sorted(imports):
         lines.append(imp)
+
+    lines.extend(["", ""])
+
+    for schema in schemas:
+        lines.append(schema.to_code())
+        lines.append("")
 
     lines.extend(["", ""])
 
@@ -191,12 +226,20 @@ def _generate_source(spec: SignatureSpec) -> str:
     lines.append("")
 
     for field in spec.inputs:
-        type_str = _type_to_str(field.resolved_type)
+        type_str = (
+            field.model_schema.model_name
+            if field.model_schema is not None
+            else _type_to_str(field.resolved_type)
+        )
         desc = field.description.replace("\\", "\\\\").replace('"', '\\"')
         lines.append(f'    {field.name}: {type_str} = dspy.InputField(desc="{desc}")')
 
     for field in spec.outputs:
-        type_str = _type_to_str(field.resolved_type)
+        type_str = (
+            field.model_schema.model_name
+            if field.model_schema is not None
+            else _type_to_str(field.resolved_type)
+        )
         desc = field.description.replace("\\", "\\\\").replace('"', '\\"')
         lines.append(f'    {field.name}: {type_str} = dspy.OutputField(desc="{desc}")')
 

@@ -5,6 +5,8 @@ from __future__ import annotations
 import dspy
 from pydantic import BaseModel, Field
 
+from dspy_auto_signature.types.signature_spec import PydanticModelSchema
+
 
 class ProposedField(BaseModel):
     """Normalized field proposal produced by the RLM."""
@@ -13,14 +15,30 @@ class ProposedField(BaseModel):
     description: str = Field(description="Specific description of the field's value")
     type: str = Field(
         default="string",
-        description="Natural-language type such as string, integer, or list of strings",
+        description=(
+            "Natural-language type such as string, integer, or list of strings. "
+            "Use 'pydantic' for structured outputs and provide pydantic_model."
+        ),
+    )
+    literal_values: list[str | int] | None = Field(
+        default=None,
+        description="Allowed values when the type is a Literal (enumerated output)",
+    )
+    pydantic_model: PydanticModelSchema | None = Field(
+        default=None,
+        description=(
+            "Complete nested Pydantic model schema (model_name, description, "
+            "typed fields) when type is 'pydantic'"
+        ),
     )
 
 
 class ProposedSignature(BaseModel):
     """Normalized complete signature proposal produced by the RLM."""
 
-    name: str = Field(description="Specific PascalCase Signature class name")
+    name: str = Field(
+        description="Specific PascalCase Signature class name ending with 'Signature'"
+    )
     instructions: str = Field(description="Specific task doctrine and instructions")
     inputs: list[ProposedField] = Field(description="All required input fields")
     outputs: list[ProposedField] = Field(description="All required output fields")
@@ -56,17 +74,32 @@ class GenerateSignature(dspy.Signature):
        and expected output behavior.
     8. Use the most specific practical types, including literal types for known
        categorical outputs.
-       Express literal types as ``literal low, medium, high`` without JSON brackets.
+       Express literal types as ``literal low, medium, high`` without JSON brackets,
+       or set ``type`` to ``Literal`` with an explicit ``literal_values`` list.
+    9. For structured outputs with multiple related fields or nested objects, do not
+       use a plain ``str`` type with JSON instructions. Set ``type`` to ``pydantic``
+       and provide a complete ``pydantic_model`` schema: ``model_name`` (PascalCase),
+       optional ``description``, and typed ``fields`` where each field has a
+       ``name``, a concrete ``type`` (``str``, ``int``, ``float``, ``bool``,
+       ``list[str]``, ``dict[str, str]``, ``Literal``, ``pydantic`` for nesting),
+       a ``description``, a ``required`` flag, ``literal_values`` for Literal
+       fields, and ``nested_model`` for nested objects. Never describe a structured
+       output as a JSON string.
+    10. Simple scalar outputs (a single answer, score, or label) stay as plain types;
+        reserve Pydantic models for well-defined multi-field structures.
 
     ## Final submission
 
     Call ``FINAL(draft=...)`` exactly once after completing the analysis. ``draft``
     must represent the complete signature with:
 
-    - ``name``: specific PascalCase class name
+    - ``name``: specific PascalCase class name ending with ``Signature``
+      (for example ``TicketClassificationSignature``)
     - ``instructions``: specific task doctrine
     - ``inputs``: field objects containing name, description, and type
-    - ``outputs``: field objects containing name, description, and type
+    - ``outputs``: field objects containing name, description, and type (plus
+      ``literal_values`` for enumerated outputs and ``pydantic_model`` for
+      structured outputs)
 
     The final draft may be a dictionary or equivalent structured object. Do not
     serialize it into a JSON string.
@@ -146,16 +179,22 @@ class GenerateSDKSignature(dspy.Signature):
     4. Combine these insights into a coherent signature.
     5. Use semantic, specific field names. ``article`` is better than ``input_text``.
     6. Write specific instructions that capture the task, constraints, and format.
-    7. Use specific types including literals for categorical outputs.
+    7. Use specific types including literals for categorical outputs. For structured
+       assistant outputs (multi-field JSON objects, nested records), set ``type`` to
+       ``pydantic`` with a complete ``pydantic_model`` schema instead of a plain
+       ``str`` described as JSON; use ``literal_values`` for enumerated outputs.
 
     ## Final submission
 
     Call ``FINAL(draft=...)`` exactly once. The draft must contain:
 
-    - ``name``: specific PascalCase class name
+    - ``name``: specific PascalCase class name ending with ``Signature``
+      (for example ``TicketClassificationSignature``)
     - ``instructions``: complete task doctrine derived from system + user context
     - ``inputs``: field objects with name, description, and type
-    - ``outputs``: field objects with name, description, and type
+    - ``outputs``: field objects with name, description, and type (plus
+      ``literal_values`` for enumerated outputs and ``pydantic_model`` for
+      structured outputs)
     """
 
     sdk_format: str = dspy.InputField(

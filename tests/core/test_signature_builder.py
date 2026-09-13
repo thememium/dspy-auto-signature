@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 import types
 from typing import IO, Any, Callable, List, Literal, Optional, Union, cast
 
@@ -13,10 +14,16 @@ from pydantic.fields import FieldInfo
 from dspy_auto_signature.core.signature_builder import (
     SignatureBuilder,
     _collect_imports,
+    _collect_schema_imports,
     _escape_for_docstring,
     _type_to_str,
 )
-from dspy_auto_signature.types.signature_spec import FieldSpec, FieldType, SignatureSpec
+from dspy_auto_signature.types.signature_spec import (
+    FieldSpec,
+    FieldType,
+    PydanticModelSchema,
+    SignatureSpec,
+)
 from dspy_auto_signature.utils.type_resolver import TypeResolver
 
 
@@ -52,7 +59,7 @@ class TestSignatureBuilder:
         Sig = SignatureBuilder.build(spec)
 
         assert issubclass(cast(type, Sig), dspy.Signature)
-        assert Sig.__name__ == "TestSummarizer"
+        assert Sig.__name__ == "TestSummarizerSignature"
         assert Sig.instructions == "Summarize text into bullet points."
         assert "text" in Sig.input_fields
         assert "summary" in Sig.output_fields
@@ -318,7 +325,7 @@ class TestSignatureBuilder:
         Sig = SignatureBuilder.build(spec)
         source = Sig.to_source()
 
-        assert "class SourceTest(dspy.Signature):" in source
+        assert "class SourceTestSignature(dspy.Signature):" in source
         assert 'text: str = dspy.InputField(desc="Input text")' in source
         assert 'result: list[str] = dspy.OutputField(desc="The result")' in source
         assert "import dspy" in source
@@ -347,7 +354,7 @@ class TestSignatureBuilder:
 
         source = SignatureBuilder.to_source(spec)
 
-        assert "class ClassMethodTest(dspy.Signature):" in source
+        assert "class ClassMethodTestSignature(dspy.Signature):" in source
         assert 'query: str = dspy.InputField(desc="Search query")' in source
         assert 'answer: str = dspy.OutputField(desc="The answer")' in source
 
@@ -361,6 +368,7 @@ class _FakeField:
 
     def __init__(self, resolved_type: object) -> None:
         self.resolved_type = resolved_type
+        self.model_schema: PydanticModelSchema | None = None
 
 
 class TestTypeToStr:
@@ -601,3 +609,144 @@ class TestMakeFieldTuple:
         assert resolved is str
         assert isinstance(info, FieldInfo)
         assert info.description == "Score between 0 and 1"
+
+
+class TestPydanticOutputFields:
+    def _schema_spec(self) -> SignatureSpec:
+        return SignatureSpec(
+            name="ContactExtractor",
+            instructions="Extract contact records from the message.",
+            inputs=[
+                FieldSpec(
+                    name="message",
+                    description="The raw message",
+                    field_type=FieldType.INPUT,
+                )
+            ],
+            outputs=[
+                FieldSpec(
+                    name="contact",
+                    description="The extracted contact",
+                    field_type=FieldType.OUTPUT,
+                    suggested_type="pydantic",
+                    model_schema=PydanticModelSchema.model_validate(
+                        {
+                            "model_name": "ContactRecord",
+                            "description": "A contact record",
+                            "fields": [
+                                {
+                                    "name": "full_name",
+                                    "type": "str",
+                                    "description": "Full name",
+                                },
+                                {
+                                    "name": "age",
+                                    "type": "Optional[int]",
+                                    "description": "Age",
+                                },
+                                {
+                                    "name": "priority",
+                                    "type": "Literal",
+                                    "literal_values": ["low", "high"],
+                                    "description": "Priority",
+                                },
+                            ],
+                        }
+                    ),
+                ),
+                FieldSpec(
+                    name="summary",
+                    description="One-line summary",
+                    field_type=FieldType.OUTPUT,
+                ),
+            ],
+        )
+
+    def test_output_annotation_is_generated_model(self) -> None:
+        Sig = SignatureBuilder.build(self._schema_spec())
+        model: Any = Sig.output_fields["contact"].annotation
+        record = model(full_name="Ada", age=None, priority="high")
+        assert record.full_name == "Ada"
+        with pytest.raises(Exception):
+            model(full_name="Ada", priority="bogus")
+
+    def test_live_signature_is_usable_with_predict(self) -> None:
+        Sig = SignatureBuilder.build(self._schema_spec())
+        predictor = dspy.Predict(cast("type[dspy.Signature]", Sig))
+        assert predictor.signature is not None
+        assert "contact" in predictor.signature.output_fields
+
+    def test_source_defines_models_before_signature(self) -> None:
+        Sig = SignatureBuilder.build(self._schema_spec())
+        source = Sig.to_source()
+        assert "from pydantic import BaseModel, Field" in source
+        assert "from typing import Literal" in source
+        assert source.index("class ContactRecord(BaseModel):") < source.index(
+            "class ContactExtractorSignature(dspy.Signature):"
+        )
+        assert "contact: ContactRecord" in source
+        assert "summary: str" in source
+        namespace: dict[str, Any] = {"__name__": "gen_builder_test"}
+        exec(compile(source, "gen_builder_test.py", "exec"), namespace)
+        cast(Any, sys.modules)["gen_builder_test"] = types.SimpleNamespace(**namespace)
+        assert namespace["ContactRecord"](full_name="Ada", priority="low")
+
+    def test_collect_imports_skips_model_schema_fields(self) -> None:
+        spec = self._schema_spec()
+        imports = _collect_imports([*spec.inputs, *spec.outputs])
+        assert not any("signature_spec" in imp for imp in imports)
+
+    def test_collect_schema_imports(self) -> None:
+        spec = self._schema_spec()
+        contact = spec.outputs[0]
+        assert contact.model_schema is not None
+        schemas = contact.model_schema.ordered_models()
+        imports = _collect_schema_imports(schemas)
+        assert "from pydantic import BaseModel, Field" in imports
+        assert "from typing import Literal" in imports
+        assert _collect_schema_imports([]) == set()
+
+    def test_plain_fields_keep_resolver_types(self) -> None:
+        spec = self._schema_spec()
+        Sig = SignatureBuilder.build(spec)
+        assert Sig.output_fields["summary"].annotation is str
+        assert 'summary: str = dspy.OutputField(desc="One-line summary")' in (
+            Sig.to_source()
+        )
+
+
+class TestPydanticSchemaImports:
+    def test_dict_str_any_field_needs_typing_any_import(self) -> None:
+        schema = PydanticModelSchema.model_validate(
+            {
+                "model_name": "Loose",
+                "fields": [
+                    {"name": "meta", "type": "dict[str, Any]", "description": "Meta"}
+                ],
+            }
+        )
+        assert _collect_schema_imports([schema]) == {
+            "from pydantic import BaseModel, Field",
+            "from typing import Any",
+        }
+
+    def test_literal_and_any_together(self) -> None:
+        schema = PydanticModelSchema.model_validate(
+            {
+                "model_name": "Mixed",
+                "fields": [
+                    {
+                        "name": "kind",
+                        "type": "Literal",
+                        "literal_values": ["a"],
+                        "description": "Kind",
+                    },
+                    {"name": "meta", "type": "dict[str, Any]", "description": "Meta"},
+                ],
+            }
+        )
+        assert _collect_schema_imports([schema]) == {
+            "from pydantic import BaseModel, Field",
+            "from typing import Any",
+            "from typing import Literal",
+        }

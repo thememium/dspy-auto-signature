@@ -19,7 +19,7 @@ from dspy_auto_signature.generator.rlm_signature_generator import (
     close_interpreter,
 )
 from dspy_auto_signature.parser import AutoParser, DataFrameParser
-from dspy_auto_signature.types.signature_spec import SignatureSpec
+from dspy_auto_signature.types.signature_spec import PydanticModelSchema, SignatureSpec
 
 __all__ = [
     "generate",
@@ -28,6 +28,7 @@ __all__ = [
     "configure",
     "close_interpreter",
     "SignatureSpec",
+    "PydanticModelSchema",
     "GeneratedSignature",
 ]
 

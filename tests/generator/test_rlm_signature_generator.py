@@ -22,6 +22,7 @@ from dspy_auto_signature.types.signature_spec import (
     FieldSpec,
     FieldType,
     ParsedPrompt,
+    PydanticModelSchema,
     SignatureSpec,
 )
 
@@ -113,7 +114,7 @@ class TestDraftNormalization:
             ],
         }
         spec = RLMSignatureGenerator._draft_to_spec(draft)
-        assert spec.name == "TicketClassifier"
+        assert spec.name == "TicketClassifierSignature"
         assert spec.inputs[0].name == "ticket_message"
         assert spec.outputs[0].suggested_type == "literal low, high"
         SignatureBuilder.build(spec)
@@ -129,7 +130,7 @@ class TestDraftNormalization:
             ],
         }
         spec = RLMSignatureGenerator._draft_to_spec(draft)
-        assert spec.name == "TicketClassifier"
+        assert spec.name == "TicketClassifierSignature"
         assert spec.inputs[0].name == "ticket_message"
         assert spec.outputs[0].name == "class_value"
         SignatureBuilder.build(spec)
@@ -628,7 +629,7 @@ class TestStructuralFastPath:
         spec = generator.forward(prompt, mode="rlm")
 
         assert stub.calls == 1
-        assert spec.name == "ArticleSummarizer"
+        assert spec.name == "ArticleSummarizerSignature"
         SignatureBuilder.build(spec)
 
     def test_cot_mode_routes_sdk_input_through_cot(
@@ -651,7 +652,7 @@ class TestStructuralFastPath:
         spec = generator.forward(prompt, mode="cot")
 
         assert stub.calls == 1
-        assert spec.name == "ArticleSummarizer"
+        assert spec.name == "ArticleSummarizerSignature"
         SignatureBuilder.build(spec)
 
     def test_sdk_placeholders_become_input_fields(
@@ -891,7 +892,7 @@ class TestStructuralFastPath:
         spec = generator.forward(prompt)
 
         assert stub.calls == 1
-        assert spec.name == "ArticleSummarizer"
+        assert spec.name == "ArticleSummarizerSignature"
 
     def test_rlm_failure_falls_back_for_structureless_prompt(
         self, monkeypatch: pytest.MonkeyPatch
@@ -975,7 +976,7 @@ class TestForwardPromptPath:
         spec = generator.forward(prompt, mode="rlm")
 
         assert stub.kwargs["source_kind"] == "prompt"
-        assert spec.name == "ArticleSummarizer"
+        assert spec.name == "ArticleSummarizerSignature"
         assert [field.name for field in spec.inputs] == ["article"]
         SignatureBuilder.build(spec)
 
@@ -995,7 +996,7 @@ class TestForwardPromptPath:
 
         assert stub.calls == 1
         assert stub.kwargs["source_kind"] == "prompt"
-        assert spec.name == "ArticleSummarizer"
+        assert spec.name == "ArticleSummarizerSignature"
         SignatureBuilder.build(spec)
 
     def test_cot_mode_runs_cot_on_plain_prompt(
@@ -1014,7 +1015,7 @@ class TestForwardPromptPath:
 
         assert stub.calls == 1
         assert stub.kwargs["source_kind"] == "prompt"
-        assert spec.name == "ArticleSummarizer"
+        assert spec.name == "ArticleSummarizerSignature"
         SignatureBuilder.build(spec)
 
     def test_cot_mode_runs_cot_on_dataset(
@@ -1121,7 +1122,7 @@ class TestForwardPromptPath:
 
         assert stub.calls == 1
         assert stub.kwargs["source_kind"] == "dataset"
-        assert spec.name == "ArticleSummarizer"
+        assert spec.name == "ArticleSummarizerSignature"
         SignatureBuilder.build(spec)
 
     def test_forward_falls_back_when_rlm_fails(
@@ -1175,7 +1176,7 @@ class TestForwardSDKPath:
         spec = generator.forward(prompt)
 
         assert stub.kwargs["sdk_format"] == "openai"
-        assert spec.name == "ArticleSummarizer"
+        assert spec.name == "ArticleSummarizerSignature"
         SignatureBuilder.build(spec)
 
     def test_forward_sdk_falls_back_to_prompt_fallback(
@@ -1452,4 +1453,181 @@ class TestInferPromptNames:
         spec = RLMSignatureGenerator._fallback_from_prompt("Do the thing now")
         assert [field.name for field in spec.inputs] == ["source_content"]
         assert [field.name for field in spec.outputs] == ["task_result"]
+
+
+class TestPydanticDraftConversion:
+    def test_structured_output_proposal_becomes_typed_signature(self) -> None:
+        draft = {
+            "name": "ContactExtractor",
+            "instructions": "Extract contact records from the message.",
+            "inputs": [
+                {"name": "message", "description": "The raw message", "type": "string"}
+            ],
+            "outputs": [
+                {
+                    "name": "contact",
+                    "description": "The extracted contact",
+                    "type": "pydantic",
+                    "pydantic_model": {
+                        "model_name": "ContactRecord",
+                        "description": "A contact record",
+                        "fields": [
+                            {
+                                "name": "full name",
+                                "type": "str",
+                                "description": "Full name",
+                            },
+                            {
+                                "name": "age",
+                                "type": "Optional[int]",
+                                "description": "Age in years",
+                            },
+                            {
+                                "name": "priority",
+                                "type": "literal",
+                                "literal_values": ["low", "high"],
+                                "description": "Priority",
+                            },
+                        ],
+                    },
+                },
+                {
+                    "name": "summary",
+                    "description": "One-line summary",
+                    "type": "string",
+                },
+            ],
+        }
+        spec = RLMSignatureGenerator._draft_to_spec(draft)
+        contact = spec.outputs[0]
+        assert contact.model_schema is not None
+        assert contact.model_schema.model_name == "ContactRecord"
+
+        signature = SignatureBuilder.build(spec)
+        model: Any = signature.output_fields["contact"].annotation
+        record = model(full_name="Ada", age=None, priority="high")
+        assert record.full_name == "Ada"
+        with pytest.raises(Exception):
+            model(full_name="Ada", priority="bogus")
+
+        source = signature.to_source()
+        assert "class ContactRecord(BaseModel):" in source
+        assert "contact: ContactRecord" in source
+
+    def test_literal_values_proposal_resolves_to_literal(self) -> None:
+        draft = {
+            "name": "UrgencyRouter",
+            "instructions": "Route by urgency.",
+            "inputs": [
+                {"name": "ticket", "description": "The ticket", "type": "string"}
+            ],
+            "outputs": [
+                {
+                    "name": "urgency",
+                    "description": "Urgency level",
+                    "type": "Literal",
+                    "literal_values": ["low", "high"],
+                }
+            ],
+        }
+        spec = RLMSignatureGenerator._draft_to_spec(draft)
+        signature = SignatureBuilder.build(spec)
+        annotation = signature.output_fields["urgency"].annotation
+        assert getattr(annotation, "__args__", ()) == ("low", "high")
+
+    def test_invalid_model_schema_is_dropped_field_survives(self) -> None:
+        draft = {
+            "name": "BrokenSchema",
+            "instructions": "Produce a record.",
+            "inputs": [{"name": "text", "description": "Input text"}],
+            "outputs": [
+                {
+                    "name": "record",
+                    "description": "The record",
+                    "type": "pydantic",
+                    "pydantic_model": {"fields": [{"name": "only", "type": "str"}]},
+                },
+                {"name": "fallback", "description": "Fallback output"},
+            ],
+        }
+        spec = RLMSignatureGenerator._draft_to_spec(draft)
+        assert spec.outputs[0].model_schema is None
+        assert spec.outputs[0].suggested_type == "pydantic"
+        assert spec.outputs[1].name == "fallback"
+        SignatureBuilder.build(spec)
+
+    def test_nested_model_schema_becomes_nested_annotation(self) -> None:
+        draft = {
+            "name": "OrderReviewer",
+            "instructions": "Review the order.",
+            "inputs": [{"name": "order", "description": "The order"}],
+            "outputs": [
+                {
+                    "name": "review",
+                    "description": "The review",
+                    "type": "pydantic",
+                    "pydantic_model": {
+                        "model_name": "Review",
+                        "fields": [
+                            {"name": "score", "type": "int", "description": "Score"},
+                            {
+                                "name": "shipping address",
+                                "type": "pydantic",
+                                "description": "Shipping",
+                                "nested_model": {
+                                    "model_name": "ShippingAddress",
+                                    "fields": [
+                                        {
+                                            "name": "city",
+                                            "type": "str",
+                                            "description": "City",
+                                        }
+                                    ],
+                                },
+                            },
+                        ],
+                    },
+                }
+            ],
+        }
+        spec = RLMSignatureGenerator._draft_to_spec(draft)
+        signature = SignatureBuilder.build(spec)
+        model: Any = signature.output_fields["review"].annotation
+        review = model(score=5, shipping_address={"city": "Berlin"})
+        assert review.shipping_address.city == "Berlin"
+        source = signature.to_source()
+        assert "class ShippingAddress(BaseModel):" in source
+        assert "shipping_address: ShippingAddress" in source
+
+    def test_proposed_field_defaults_keep_plain_paths_stable(self) -> None:
+        field = ProposedField(name="answer", description="The answer")
+        assert field.literal_values is None
+        assert field.pydantic_model is None
+
+    def test_existing_model_schema_instance_is_passed_through(self) -> None:
+        schema = PydanticModelSchema.model_validate(
+            {
+                "model_name": "ContactRecord",
+                "fields": [{"name": "name", "type": "str", "description": "Name"}],
+            }
+        )
+        assert RLMSignatureGenerator._parse_model_schema(schema) is schema
+
+    def test_unparseable_model_schema_payload_is_dropped(self) -> None:
+        draft = {
+            "name": "JunkSchema",
+            "instructions": "Extract things.",
+            "inputs": [{"name": "message", "description": "The message"}],
+            "outputs": [
+                {
+                    "name": "result",
+                    "description": "The result",
+                    "type": "pydantic",
+                    "pydantic_model": "not json at all",
+                },
+                {"name": "fallback", "description": "The fallback"},
+            ],
+        }
+        spec = RLMSignatureGenerator._draft_to_spec(draft)
+        assert spec.outputs[0].model_schema is None
         SignatureBuilder.build(spec)

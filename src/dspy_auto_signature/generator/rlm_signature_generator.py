@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING, Any, Literal
 
 import dspy
 from dspy.primitives.python_interpreter import PythonInterpreter
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from dspy_auto_signature.core.config import Config
 from dspy_auto_signature.generator.rlm_signatures import (
@@ -20,7 +20,12 @@ from dspy_auto_signature.generator.rlm_signatures import (
     GenerateSignature,
     ProposedField,
 )
-from dspy_auto_signature.types.signature_spec import FieldSpec, FieldType, SignatureSpec
+from dspy_auto_signature.types.signature_spec import (
+    FieldSpec,
+    FieldType,
+    PydanticModelSchema,
+    SignatureSpec,
+)
 
 if TYPE_CHECKING:
     from dspy_auto_signature.types.signature_spec import ParsedPrompt
@@ -685,6 +690,8 @@ class RLMSignatureGenerator(dspy.Module):
                     description=proposed.description.strip(),
                     suggested_type=proposed.type.strip() or "string",
                     field_type=field_type,
+                    literal_values=proposed.literal_values,
+                    model_schema=proposed.pydantic_model,
                 )
             )
         return fields
@@ -718,7 +725,47 @@ class RLMSignatureGenerator(dspy.Module):
             )
             or "string"
         )
-        return ProposedField(name=name, description=description, type=suggested_type)
+        return ProposedField(
+            name=name,
+            description=description,
+            type=suggested_type,
+            literal_values=cls._coerce_literal_values(
+                field.get("literal_values") or field.get("allowed_values")
+            ),
+            pydantic_model=cls._parse_model_schema(
+                field.get("pydantic_model") or field.get("model_schema")
+            ),
+        )
+
+    @staticmethod
+    def _coerce_literal_values(raw: Any) -> list[str | int] | None:
+        """Coerce a proposed literal value list into usable values, if any."""
+        values = [
+            value
+            for value in RLMSignatureGenerator._as_sequence(raw)
+            if isinstance(value, (str, int)) and str(value).strip()
+        ]
+        return values or None
+
+    @classmethod
+    def _parse_model_schema(cls, raw: Any) -> PydanticModelSchema | None:
+        """Best-effort parse of a proposed Pydantic model schema.
+
+        Invalid schemas are dropped (with a warning) instead of failing the
+        whole draft: the field keeps its plain suggested type.
+        """
+        if raw is None:
+            return None
+        if isinstance(raw, PydanticModelSchema):
+            return raw
+        data = cls._as_mapping(raw)
+        if not data:
+            return None
+        try:
+            return PydanticModelSchema.model_validate(data)
+        except ValidationError as exc:
+            logger.warning("Ignoring invalid proposed Pydantic model schema: %s", exc)
+            return None
 
     @staticmethod
     def _as_mapping(value: Any) -> dict[str, Any]:
