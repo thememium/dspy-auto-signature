@@ -2,7 +2,7 @@
 
 import ast
 import typing
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 import pytest
 from pydantic import ValidationError as PydanticValidationError
@@ -204,6 +204,29 @@ class TestPydanticModelSchema:
             name="status", type=cast(Any, "Literal"), description="Status"
         )
         assert field.type.value == "str"
+
+    def test_string_type_with_literal_values_promotes_to_literal(self) -> None:
+        """A draft proposing type str plus literal_values becomes Literal."""
+        field = PydanticFieldDef(
+            name="urgency_level",
+            type=cast(Any, "str"),
+            literal_values=["low", "medium", "high"],
+            description="Urgency level of the ticket.",
+        )
+        assert field.type.value == "Literal"
+        assert field.literal_values == ["low", "medium", "high"]
+        assert field.annotation() == Literal["low", "medium", "high"]
+
+    def test_literal_type_with_values_stays_literal(self) -> None:
+        """An explicit Literal proposal with values is untouched."""
+        field = PydanticFieldDef(
+            name="urgency_level",
+            type=cast(Any, "Literal"),
+            literal_values=["low", "high"],
+            description="Urgency level.",
+        )
+        assert field.type.value == "Literal"
+        assert field.literal_values == ["low", "high"]
 
     def test_list_description_upgrades_string_type(self) -> None:
         """A STRING field described as "list of strings" becomes list[str]."""

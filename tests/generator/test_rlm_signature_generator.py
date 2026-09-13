@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, Literal, get_args, get_origin
 
 import dspy
 import pytest
@@ -138,6 +138,229 @@ class TestDraftNormalization:
         spec = RLMSignatureGenerator._draft_to_spec(draft)
         assert spec.outputs[0].suggested_type == "list[str]"
         SignatureBuilder.build(spec)
+
+    def test_model_literals_inferred_from_instructions(self) -> None:
+        """Enumerations in instructions become Literal model field types."""
+        draft = {
+            "name": "TicketAssessment",
+            "instructions": (
+                "Analyze the support ticket message and determine both its "
+                "urgency level (low, medium, or high) and its sentiment "
+                "(negative, neutral, or positive). Return both predictions."
+            ),
+            "inputs": [
+                {"name": "message", "description": "The ticket text", "type": "string"}
+            ],
+            "outputs": [
+                {
+                    "name": "assessment",
+                    "description": "The assessment",
+                    "type": "pydantic",
+                    "pydantic_model": {
+                        "model_name": "TicketAssessment",
+                        "fields": [
+                            {
+                                "name": "urgency_level",
+                                "type": "str",
+                                "description": "Urgency level of the ticket.",
+                            },
+                            {
+                                "name": "sentiment",
+                                "type": "str",
+                                "description": "Sentiment expressed in the ticket.",
+                            },
+                        ],
+                    },
+                }
+            ],
+        }
+        spec = RLMSignatureGenerator._draft_to_spec(draft)
+        schema = spec.outputs[0].model_schema
+        assert schema is not None
+        assert schema.fields[0].type.value == "Literal"
+        assert schema.fields[0].literal_values == ["low", "medium", "high"]
+        assert schema.fields[1].type.value == "Literal"
+        assert schema.fields[1].literal_values == ["negative", "neutral", "positive"]
+        signature = SignatureBuilder.build(spec)
+        model = signature.output_fields["assessment"].annotation
+        assert model is not None and not isinstance(model, type(None))
+        field_annotation = model.model_fields["urgency_level"].annotation
+        assert get_origin(field_annotation) is Literal
+        assert get_args(field_annotation) == (
+            "low",
+            "medium",
+            "high",
+        )
+
+    def test_model_literal_inferred_from_field_description(self) -> None:
+        """A field description enumeration alone produces a Literal field."""
+        draft = {
+            "name": "TicketAssessment",
+            "instructions": "Assess the support ticket.",
+            "inputs": [
+                {"name": "message", "description": "The ticket text", "type": "string"}
+            ],
+            "outputs": [
+                {
+                    "name": "assessment",
+                    "description": "The assessment",
+                    "type": "pydantic",
+                    "pydantic_model": {
+                        "model_name": "TicketAssessment",
+                        "fields": [
+                            {
+                                "name": "urgency_level",
+                                "type": "str",
+                                "description": "Urgency level (low, medium, high).",
+                            }
+                        ],
+                    },
+                }
+            ],
+        }
+        spec = RLMSignatureGenerator._draft_to_spec(draft)
+        schema = spec.outputs[0].model_schema
+        assert schema is not None
+        assert schema.fields[0].literal_values == ["low", "medium", "high"]
+
+    def test_model_string_field_without_enumeration_stays_string(self) -> None:
+        """No enumeration nearby: the model field keeps its plain str type."""
+        draft = {
+            "name": "Summarizer",
+            "instructions": "Summarize the article in one paragraph.",
+            "inputs": [
+                {"name": "article", "description": "The article", "type": "string"}
+            ],
+            "outputs": [
+                {
+                    "name": "summary",
+                    "description": "The summary",
+                    "type": "pydantic",
+                    "pydantic_model": {
+                        "model_name": "Summary",
+                        "fields": [
+                            {
+                                "name": "text",
+                                "type": "str",
+                                "description": "The summary text",
+                            }
+                        ],
+                    },
+                }
+            ],
+        }
+        spec = RLMSignatureGenerator._draft_to_spec(draft)
+        schema = spec.outputs[0].model_schema
+        assert schema is not None
+        assert schema.fields[0].type.value == "str"
+        assert schema.fields[0].literal_values is None
+
+    def test_existing_literal_values_are_not_overwritten(self) -> None:
+        """A field that already has literal_values keeps them untouched."""
+        draft = {
+            "name": "TicketAssessment",
+            "instructions": "Rate the ticket priority (p1, p2).",
+            "inputs": [
+                {"name": "message", "description": "The ticket text", "type": "string"}
+            ],
+            "outputs": [
+                {
+                    "name": "assessment",
+                    "description": "The assessment",
+                    "type": "pydantic",
+                    "pydantic_model": {
+                        "model_name": "TicketAssessment",
+                        "fields": [
+                            {
+                                "name": "priority",
+                                "type": "Literal",
+                                "literal_values": ["critical"],
+                                "description": "Ticket priority",
+                            }
+                        ],
+                    },
+                }
+            ],
+        }
+        spec = RLMSignatureGenerator._draft_to_spec(draft)
+        schema = spec.outputs[0].model_schema
+        assert schema is not None
+        assert schema.fields[0].literal_values == ["critical"]
+
+    def test_prose_parentheticals_and_short_names_stay_string(self) -> None:
+        """Prose fragments, short names, and 7-value lists never infer literals."""
+        draft = {
+            "name": "Diagnosis",
+            "instructions": (
+                "Check the severity (a, b, c, d, e, f, g) before answering."
+            ),
+            "inputs": [
+                {"name": "report", "description": "The report", "type": "string"}
+            ],
+            "outputs": [
+                {
+                    "name": "diagnosis",
+                    "description": "The diagnosis",
+                    "type": "pydantic",
+                    "pydantic_model": {
+                        "model_name": "Diagnosis",
+                        "fields": [
+                            {
+                                "name": "id",
+                                "type": "str",
+                                "description": "Identifier (ref)",
+                            },
+                            {
+                                "name": "severity",
+                                "type": "str",
+                                "description": "Severity of the issue",
+                            },
+                        ],
+                    },
+                }
+            ],
+        }
+        spec = RLMSignatureGenerator._draft_to_spec(draft)
+        schema = spec.outputs[0].model_schema
+        assert schema is not None
+        assert schema.fields[0].type.value == "str"
+        assert schema.fields[0].literal_values is None
+        assert schema.fields[1].type.value == "str"
+        assert schema.fields[1].literal_values is None
+
+    def test_enumeration_without_matching_field_name_is_ignored(self) -> None:
+        """An enumeration far from any model field's name infers nothing."""
+        draft = {
+            "name": "Summarizer",
+            "instructions": (
+                "Supported locales (en, fr, de) are irrelevant to the summary."
+            ),
+            "inputs": [
+                {"name": "article", "description": "The article", "type": "string"}
+            ],
+            "outputs": [
+                {
+                    "name": "summary",
+                    "description": "The summary",
+                    "type": "pydantic",
+                    "pydantic_model": {
+                        "model_name": "Summary",
+                        "fields": [
+                            {
+                                "name": "text",
+                                "type": "str",
+                                "description": "The summary text",
+                            }
+                        ],
+                    },
+                }
+            ],
+        }
+        spec = RLMSignatureGenerator._draft_to_spec(draft)
+        schema = spec.outputs[0].model_schema
+        assert schema is not None
+        assert schema.fields[0].type.value == "str"
+        assert schema.fields[0].literal_values is None
 
     def test_json_directive_removed_for_pydantic_output(self) -> None:
         """JSON output-format sentences are stripped when output is pydantic."""
