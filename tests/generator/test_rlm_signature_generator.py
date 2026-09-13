@@ -427,10 +427,17 @@ class TestWarmInterpreter:
     def test_generators_share_the_thread_interpreter(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
+        import dspy_auto_signature.generator.rlm_signature_generator as gen_mod
+
         monkeypatch.setattr(Config, "_lm", dspy.LM("openai/gpt-4o"))
         first = RLMSignatureGenerator()
         second = RLMSignatureGenerator()
-        assert first.rlm._interpreter is second.rlm._interpreter
+        if first._pass_warm_interpreter:
+            # dspy >=3.3 resolves the interpreter per call from the thread-local.
+            assert not hasattr(first.rlm, "_interpreter")
+            assert gen_mod._thread_interpreter() is gen_mod._thread_interpreter()
+        else:
+            assert first.rlm._interpreter is second.rlm._interpreter
 
     def test_close_interpreter_for_thread_shuts_down(
         self, monkeypatch: pytest.MonkeyPatch
@@ -476,7 +483,11 @@ class TestWarmInterpreter:
             thread.join()
 
         assert results["a"] is not results["b"]
-        assert results["a"].rlm._interpreter is not results["b"].rlm._interpreter
+        if results["a"]._pass_warm_interpreter:
+            # dspy >=3.3 resolves interpreters from per-thread state at call time.
+            assert not hasattr(results["a"].rlm, "_interpreter")
+        else:
+            assert results["a"].rlm._interpreter is not results["b"].rlm._interpreter
         assert das._get_generator(shared_lm) is das._get_generator(shared_lm)
 
     def test_interpreter_proxy_delegates_and_cleans_up(
@@ -492,6 +503,18 @@ class TestWarmInterpreter:
                 self.output_fields: list[str] | None = None
                 self._tools_registered = False
                 self.shutdown_calls = 0
+                self.start_calls = 0
+                self.executed: list[tuple[str, dict[str, Any] | None]] = []
+                self.extra = "delegated"
+
+            def start(self) -> None:
+                self.start_calls += 1
+
+            def execute(
+                self, code: str, variables: dict[str, Any] | None = None
+            ) -> str:
+                self.executed.append((code, variables))
+                return "ok"
 
             def shutdown(self) -> None:
                 self.shutdown_calls += 1
@@ -501,6 +524,11 @@ class TestWarmInterpreter:
         try:
             proxy = gen_mod._thread_interpreter()
             inner = proxy._interpreter
+            proxy.start()
+            assert proxy.execute("print(1)", variables={"x": 1}) == "ok"
+            assert inner.start_calls == 1
+            assert inner.executed == [("print(1)", {"x": 1})]
+            assert proxy.extra == "delegated"  # __getattr__ fallback
             proxy.tools["llm_query"] = "fn"  # attribute passthrough
             assert inner.tools == {"llm_query": "fn"}
             proxy.output_fields = ["draft"]
@@ -508,12 +536,46 @@ class TestWarmInterpreter:
             proxy._tools_registered = False
             assert inner._tools_registered is False
 
+            proxy.shutdown()
             gen_mod._INTERPRETERS.interpreter = None
             del proxy
             gc.collect()
-            assert inner.shutdown_calls == 1
+            assert inner.shutdown_calls == 2  # explicit + __del__ cleanup
         finally:
             gen_mod._INTERPRETERS.interpreter = None
+
+    def test_call_architect_hands_warm_interpreter_to_rlm_only(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import dspy_auto_signature.generator.rlm_signature_generator as gen_mod
+
+        class _SpyModule:
+            def __init__(self) -> None:
+                self.interpreter: Any = None
+                self.kwargs: dict[str, Any] = {}
+
+            def __call__(self, *args: Any, **kwargs: Any) -> None:
+                if args:
+                    self.interpreter = args[0]
+                self.kwargs = kwargs
+
+        monkeypatch.setattr(Config, "_lm", dspy.LM("openai/gpt-4o"))
+        generator = RLMSignatureGenerator()
+        rlm_stub, cot_stub = _SpyModule(), _SpyModule()
+        generator.rlm = rlm_stub  # type: ignore[assignment]
+        generator.cot = cot_stub  # ty: ignore[invalid-assignment]
+        generator._pass_warm_interpreter = True
+        sentinel = object()
+        monkeypatch.setattr(gen_mod, "_thread_interpreter", lambda: sentinel)
+
+        context = {"source_kind": "prompt"}
+        generator._call_architect(generator.rlm, context)
+        generator._call_architect(generator.cot, context)
+
+        assert rlm_stub.interpreter is sentinel
+        assert rlm_stub.kwargs == context
+        assert cot_stub.interpreter is None
+        assert cot_stub.kwargs == context
 
 
 class TestStructuralFastPath:
@@ -871,11 +933,14 @@ class _StubRLM:
     def __init__(self, draft: Any = None, error: Exception | None = None) -> None:
         self.draft = draft
         self.error = error
+        self.interpreter: Any = None
         self.kwargs: dict[str, Any] = {}
         self.calls = 0
 
-    def __call__(self, **kwargs: Any) -> Any:
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
         self.calls += 1
+        # dspy >=3.3 passes a caller-owned interpreter positionally.
+        self.interpreter = args[0] if args else None
         self.kwargs = kwargs
         if self.error is not None:
             raise self.error
