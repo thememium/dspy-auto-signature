@@ -1,5 +1,42 @@
 # Changelog
 
+## v0.1.9 (2026-09-13)
+
+[Compare changes](https://github.com/thememium/dspy-auto-signature/compare/v0.1.8...v0.1.9)
+
+### 🚀 Enhancements
+
+- **type-resolver**: provide typed defaults for bare dict/list aliases ([ebd9280](https://github.com/thememium/dspy-auto-signature/commit/ebd9280ac50bdd1e48474790f4fadd719e718eca))
+- **signature-spec**: infer list types from field names ([1040d1a](https://github.com/thememium/dspy-auto-signature/commit/1040d1ad0c2c8e3aa09b2a41de34feaedf279011))
+- **placeholder**: add comprehensive extraction and enforcement of template vars ([a9cc53b](https://github.com/thememium/dspy-auto-signature/commit/a9cc53b1cf2a83665c80914a89b6b2c16c3816f2))
+- **signature**: infer list types from field descriptions and handle JSON directives ([ccf9b20](https://github.com/thememium/dspy-auto-signature/commit/ccf9b2026893ba2caaeb2083e0943f23f610db4f))
+- **types**: infer list types from field description ([ed9b100](https://github.com/thememium/dspy-auto-signature/commit/ed9b10077c28cc232aa7a093a81574ad5226491e))
+
+### 🩹 Fixes
+
+- **signature_spec.py**: repair degenerate Literal/Pydantic proposals from drafts ([e17b7cc](https://github.com/thememium/dspy-auto-signature/commit/e17b7ccf23d65fe23939d971a1049741d4d311a8))
+
+### 💅 Refactors
+
+- **dspy_auto_signature**: enforce stricter dict and list typing in signature ([479acce](https://github.com/thememium/dspy-auto-signature/commit/479acce5bfeaf823b594d769dfff5994941e20a4))
+- **signature**: enhance numeric and list type inference ([d66619b](https://github.com/thememium/dspy-auto-signature/commit/d66619b321eb77003f4948c034a3396466aa5351))
+- promote string fields to Literal in Pydantic models ([7c14a8b](https://github.com/thememium/dspy-auto-signature/commit/7c14a8bfb733498ecefb7e357b208f09fc557728))
+- add JSON output stripping and list type upgrading ([ae9310d](https://github.com/thememium/dspy-auto-signature/commit/ae9310d3b271213ba0801cece8d69fb07db91e55))
+
+### 📖 Documentation
+
+- clarify instructions field for signature generation ([25edb24](https://github.com/thememium/dspy-auto-signature/commit/25edb2452b8ae95fd3b7b7f2bc6aa8b1bb0c4627))
+
+### ✅ Tests
+
+- **generator**: add tests for placeholder extraction and list type inference ([f02ff9e](https://github.com/thememium/dspy-auto-signature/commit/f02ff9e21c7fecf8ae3b90b208e3711532fbad52))
+- **generator,types**: add tests for numeric range and type inference ([fb22685](https://github.com/thememium/dspy-auto-signature/commit/fb226852807e33a3a4ae41b24df6ddac8b8b5fc5))
+- **generator**: add tests for literal inference ([16b28df](https://github.com/thememium/dspy-auto-signature/commit/16b28df12172afe6573b1d4b31336ebe702628df))
+
+### Contributors
+
+- Edward Boswell <thememium@gmail.com>
+
 ## v0.1.8 (2026-09-13)
 
 [Compare changes](https://github.com/thememium/dspy-auto-signature/compare/v0.1.7...v0.1.8)
