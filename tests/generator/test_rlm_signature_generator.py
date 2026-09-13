@@ -44,6 +44,13 @@ class TestUnifiedRLMContract:
         assert hasattr(generator, "sdk_rlm")
         assert hasattr(generator, "cot")
         assert hasattr(generator, "cot_sdk")
+        # The iteration cap must land on both RLMs regardless of whether the
+        # installed dspy names it max_iterations (<3.3) or max_iters (>=3.3).
+        for rlm in (generator.rlm, generator.sdk_rlm):
+            cap = getattr(rlm, "max_iters", None) or getattr(
+                rlm, "max_iterations", None
+            )
+            assert cap == 5
 
     def test_sdk_signature_has_correct_fields(self) -> None:
         assert set(GenerateSDKSignature.input_fields) == {
