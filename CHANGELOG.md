@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.1.8 (2026-09-13)
+
+[Compare changes](https://github.com/thememium/dspy-auto-signature/compare/v0.1.7...v0.1.8)
+
+### 🚀 Enhancements
+
+- Enhance Pydantic schema generation and signature handling (#7) (#7) ([3bc636b](https://github.com/thememium/dspy-auto-signature/commit/3bc636bdaa6bebbb71c5c0e50554257cb7240fee))
+
+### Contributors
+
+- Edward Boswell <thememium@gmail.com>
+
 ## v0.1.7 (2026-09-13)
 
 [Compare changes](https://github.com/thememium/dspy-auto-signature/compare/v0.1.6...v0.1.7)
