@@ -102,6 +102,38 @@ _SCHEMA_ALIASES.update(
     }
 )
 
+_LIST_ITEM_TYPES: dict[str, SchemaFieldType] = {
+    "str": SchemaFieldType.LIST_STRING,
+    "string": SchemaFieldType.LIST_STRING,
+    "strings": SchemaFieldType.LIST_STRING,
+    "int": SchemaFieldType.LIST_INTEGER,
+    "integer": SchemaFieldType.LIST_INTEGER,
+    "integers": SchemaFieldType.LIST_INTEGER,
+    "float": SchemaFieldType.LIST_FLOAT,
+    "floats": SchemaFieldType.LIST_FLOAT,
+    "bool": SchemaFieldType.LIST_BOOLEAN,
+    "boolean": SchemaFieldType.LIST_BOOLEAN,
+    "booleans": SchemaFieldType.LIST_BOOLEAN,
+    "dict": SchemaFieldType.LIST_DICT,
+    "dicts": SchemaFieldType.LIST_DICT,
+    "object": SchemaFieldType.LIST_DICT,
+    "objects": SchemaFieldType.LIST_DICT,
+}
+_LIST_DESCRIPTION_PATTERN = re.compile(r"^\s*list of\s+(.*)", re.IGNORECASE)
+
+
+def _list_type_from_description(description: str) -> SchemaFieldType | None:
+    """Infer a list type when a STRING field's description says "list of X"."""
+    match = _LIST_DESCRIPTION_PATTERN.match(description)
+    if match is None:
+        return None
+    for token in match.group(1).split():
+        item_type = _LIST_ITEM_TYPES.get(token.strip(".,;:()").lower())
+        if item_type is not None:
+            return item_type
+    return None
+
+
 _MAX_SCHEMA_DEPTH = 8
 
 
@@ -174,6 +206,10 @@ class PydanticFieldDef(BaseModel):
             self.type = SchemaFieldType.STRING
         if self.type is SchemaFieldType.PYDANTIC_MODEL and self.nested_model is None:
             self.type = SchemaFieldType.STRING
+        if self.type is SchemaFieldType.STRING and self.description:
+            upgraded = _list_type_from_description(self.description)
+            if upgraded is not None:
+                self.type = upgraded
         return self
 
     def annotation(self) -> Any:
