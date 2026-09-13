@@ -36,7 +36,9 @@ class ProposedField(BaseModel):
 class ProposedSignature(BaseModel):
     """Normalized complete signature proposal produced by the RLM."""
 
-    name: str = Field(description="Specific PascalCase Signature class name")
+    name: str = Field(
+        description="Specific PascalCase Signature class name ending with 'Signature'"
+    )
     instructions: str = Field(description="Specific task doctrine and instructions")
     inputs: list[ProposedField] = Field(description="All required input fields")
     outputs: list[ProposedField] = Field(description="All required output fields")
@@ -91,7 +93,8 @@ class GenerateSignature(dspy.Signature):
     Call ``FINAL(draft=...)`` exactly once after completing the analysis. ``draft``
     must represent the complete signature with:
 
-    - ``name``: specific PascalCase class name
+    - ``name``: specific PascalCase class name ending with ``Signature``
+      (for example ``TicketClassificationSignature``)
     - ``instructions``: specific task doctrine
     - ``inputs``: field objects containing name, description, and type
     - ``outputs``: field objects containing name, description, and type (plus
@@ -185,7 +188,8 @@ class GenerateSDKSignature(dspy.Signature):
 
     Call ``FINAL(draft=...)`` exactly once. The draft must contain:
 
-    - ``name``: specific PascalCase class name
+    - ``name``: specific PascalCase class name ending with ``Signature``
+      (for example ``TicketClassificationSignature``)
     - ``instructions``: complete task doctrine derived from system + user context
     - ``inputs``: field objects with name, description, and type
     - ``outputs``: field objects with name, description, and type (plus

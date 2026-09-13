@@ -382,6 +382,22 @@ class SignatureSpec(BaseModel):
     """
 
     name: str = Field(default="AutoSignature", description="PascalCase class name")
+
+    @field_validator("name")
+    @classmethod
+    def _ensure_signature_suffix(cls, value: str) -> str:
+        """Guarantee the class name ends with ``Signature``.
+
+        Every generated ``dspy.Signature`` subclass must be named like
+        ``TicketClassificationSignature``. Names that already carry the
+        suffix (any casing) pass through untouched; everything else gets
+        ``Signature`` appended.
+        """
+        value = value.strip() or "AutoSignature"
+        if not value.lower().endswith("signature"):
+            value = f"{value}Signature"
+        return value
+
     instructions: str = Field(..., description="Signature docstring / task description")
     inputs: list[FieldSpec] = Field(default_factory=list, description="Input fields")
     outputs: list[FieldSpec] = Field(default_factory=list, description="Output fields")
