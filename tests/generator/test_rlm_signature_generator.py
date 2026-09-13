@@ -160,6 +160,64 @@ class TestDraftNormalization:
         assert spec.outputs[0].suggested_type == "float"
         SignatureBuilder.build(spec)
 
+    def test_collection_field_name_upgrades_to_list(self) -> None:
+        """A str field named like a collection becomes list[str] without a
+        "list of" description — the reported bullet_tags failure mode."""
+        draft = {
+            "name": "Reflector",
+            "instructions": "Diagnose the model's reasoning failure.",
+            "inputs": [
+                {"name": "playbook", "description": "The playbook", "type": "string"}
+            ],
+            "outputs": [
+                {
+                    "name": "bullet_tags",
+                    "description": "List of tags for each bullet point in the playbook",
+                    "type": "string",
+                }
+            ],
+        }
+        spec = RLMSignatureGenerator._draft_to_spec(draft)
+        assert spec.outputs[0].suggested_type == "list[str]"
+        SignatureBuilder.build(spec)
+
+    def test_model_field_bullet_tags_becomes_list(self) -> None:
+        draft = {
+            "name": "Reflector",
+            "instructions": "Diagnose the model's reasoning failure.",
+            "inputs": [
+                {"name": "playbook", "description": "The playbook", "type": "string"}
+            ],
+            "outputs": [
+                {
+                    "name": "report",
+                    "description": "The diagnosis report",
+                    "type": "pydantic",
+                    "pydantic_model": {
+                        "model_name": "DiagnosticReport",
+                        "fields": [
+                            {
+                                "name": "bullet_tags",
+                                "type": "str",
+                                "description": "List of tags for each bullet point in the playbook",
+                            },
+                            {
+                                "name": "error_identification",
+                                "type": "str",
+                                "description": "Specific description of what went wrong",
+                            },
+                        ],
+                    },
+                }
+            ],
+        }
+        spec = RLMSignatureGenerator._draft_to_spec(draft)
+        schema = spec.outputs[0].model_schema
+        assert schema is not None
+        assert schema.fields[0].type.value == "list[str]"
+        assert schema.fields[1].type.value == "str"
+        SignatureBuilder.build(spec)
+
     def test_string_output_with_count_cue_upgrades_to_int(self) -> None:
         draft = {
             "name": "Counter",
@@ -673,6 +731,128 @@ class TestGroundedFallback:
             reserved={"text"},
         )
         assert names == ["urgency"]
+
+    def test_extract_placeholder_names_covers_all_variants(self) -> None:
+        from dspy_auto_signature.generator.rlm_signature_generator import (
+            _extract_placeholder_names,
+        )
+
+        text = (
+            "Given {a} and {{b}}, send to ${c} via $d for %e% using [[f]] "
+            "with <g> content, skip </closing> and {} and $5 and <b>bold</b>."
+        )
+        assert _extract_placeholder_names(text) == [
+            "a",
+            "b",
+            "c",
+            "d",
+            "e",
+            "f",
+            "g",
+        ]
+
+    def test_prompt_fallback_supports_double_brace_placeholders(self) -> None:
+        spec = RLMSignatureGenerator._fallback_from_prompt(
+            "Summarize {{article}} for {{audience}}."
+        )
+        assert [field.name for field in spec.inputs] == ["article", "audience"]
+        SignatureBuilder.build(spec)
+
+    def test_prompt_fallback_supports_dollar_placeholders(self) -> None:
+        spec = RLMSignatureGenerator._fallback_from_prompt(
+            "Translate ${source} into $target."
+        )
+        assert [field.name for field in spec.inputs] == ["source", "target"]
+        SignatureBuilder.build(spec)
+
+    def test_ensure_placeholder_inputs_appends_missing(self) -> None:
+        draft = {
+            "name": "Answerer",
+            "instructions": "Answer the question.",
+            "inputs": [
+                {"name": "question", "description": "The question", "type": "string"}
+            ],
+            "outputs": [
+                {"name": "answer", "description": "The answer", "type": "string"}
+            ],
+        }
+        spec = RLMSignatureGenerator._draft_to_spec(draft)
+        result = RLMSignatureGenerator._ensure_placeholder_inputs(
+            spec, "Answer {{question}} using {context} and {notes}."
+        )
+        assert [field.name for field in result.inputs] == [
+            "question",
+            "context",
+            "notes",
+        ]
+        SignatureBuilder.build(result)
+
+    def test_ensure_placeholder_inputs_keeps_existing(self) -> None:
+        draft = {
+            "name": "Answerer",
+            "instructions": "Answer the question.",
+            "inputs": [
+                {"name": "question", "description": "The question", "type": "string"},
+                {"name": "context", "description": "Extra context", "type": "string"},
+            ],
+            "outputs": [
+                {"name": "answer", "description": "The answer", "type": "string"}
+            ],
+        }
+        spec = RLMSignatureGenerator._draft_to_spec(draft)
+        result = RLMSignatureGenerator._ensure_placeholder_inputs(
+            spec, "Answer {{question}} with {context}."
+        )
+        assert [field.name for field in result.inputs] == ["question", "context"]
+
+    def test_forward_cot_reconciles_missing_placeholders(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(Config, "_lm", dspy.LM("openai/gpt-4o"))
+        generator = RLMSignatureGenerator()
+
+        class StubResult:
+            draft = {
+                "name": "Answerer",
+                "instructions": "Answer the question using the context.",
+                "inputs": [
+                    {
+                        "name": "question",
+                        "description": "The question",
+                        "type": "string",
+                    }
+                ],
+                "outputs": [
+                    {"name": "answer", "description": "The answer", "type": "string"}
+                ],
+            }
+
+        class StubCoT:
+            def __call__(self, **kwargs: Any) -> StubResult:
+                return StubResult()
+
+        generator.cot = StubCoT()  # ty: ignore[invalid-assignment]
+        prompt = ParsedPrompt(
+            instruction_text="Answer {question} using {background}.",
+            raw_input="Answer {question} using {background}.",
+        )
+        spec = generator.forward(prompt, mode="cot")
+        assert [field.name for field in spec.inputs] == ["question", "background"]
+        SignatureBuilder.build(spec)
+
+    def test_forward_auto_bypasses_llm_for_double_brace(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(Config, "_lm", dspy.LM("openai/gpt-4o"))
+        generator = RLMSignatureGenerator()
+        prompt = ParsedPrompt(
+            instruction_text="Summarize {{article}} for {{audience}}.",
+            raw_input="Summarize {{article}} for {{audience}}.",
+        )
+        spec = generator.forward(prompt)
+        assert [field.name for field in spec.inputs] == ["article", "audience"]
+        assert [field.name for field in spec.outputs] == ["summary"]
+        SignatureBuilder.build(spec)
 
 
 class TestSDKDetection:

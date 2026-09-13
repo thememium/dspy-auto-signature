@@ -250,9 +250,38 @@ class TestPydanticModelSchema:
         )
         assert field.type.value == "str"
 
-    def test_list_description_unknown_item_stays_string(self) -> None:
+    def test_list_description_unknown_item_defaults_to_strings(self) -> None:
+        """An explicit "List of scores" prefix defaults to a list of strings."""
         field = PydanticFieldDef(
             name="scores", type=cast(Any, "str"), description="List of scores"
+        )
+        assert field.type.value == "list[str]"
+
+    def test_list_description_unknown_item_becomes_list(self) -> None:
+        """An explicit "List of X" prefix always means a list, even for
+        unrecognized item nouns like "tags"."""
+        field = PydanticFieldDef(
+            name="bullet_tags",
+            type=cast(Any, "str"),
+            description="List of tags for each bullet point in the playbook",
+        )
+        assert field.type.value == "list[str]"
+        assert field.annotation() == list[str]
+
+    def test_collection_name_without_list_description(self) -> None:
+        """A collection-style field name alone promotes to list[str]."""
+        field = PydanticFieldDef(
+            name="key_points",
+            type=cast(Any, "str"),
+            description="The main points from the analysis",
+        )
+        assert field.type.value == "list[str]"
+
+    def test_plain_name_and_description_stay_string(self) -> None:
+        field = PydanticFieldDef(
+            name="root_cause_analysis",
+            type=cast(Any, "str"),
+            description="Explanation of why the error occurred",
         )
         assert field.type.value == "str"
 
