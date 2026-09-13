@@ -43,11 +43,19 @@ class ProposedSignature(BaseModel):
         description=(
             "Rewritten, generalized task doctrine for the runtime model. "
             "Never a verbatim copy of the source prompt: no placeholder markers, "
-            "JSON format templates, section headers, examples, or separators."
+            "JSON format templates, section headers, examples, or separators. "
+            "When the output is a pydantic model, never mention JSON or output "
+            "formatting — DSPy renders the typed field schema automatically."
         )
     )
     inputs: list[ProposedField] = Field(description="All required input fields")
-    outputs: list[ProposedField] = Field(description="All required output fields")
+    outputs: list[ProposedField] = Field(
+        description=(
+            "Output fields; prefer exactly one — a pydantic-modeled field when "
+            "the task produces multiple values, a plain field only for a single "
+            "scalar result"
+        )
+    )
 
 
 class GenerateSignature(dspy.Signature):
@@ -76,7 +84,7 @@ class GenerateSignature(dspy.Signature):
        ``output``, ``input_text``, ``output_text``, ``data``, ``result``, or
        ``AutoSignature``. The ``input`` and ``output`` keys in example dicts are
        structural labels, not field name suggestions.
-   7. Write the ``instructions`` as your own concise task doctrine: what the
+    7. Write the ``instructions`` as your own concise task doctrine: what the
       runtime model must do, the key constraints, and the expected output
       behavior. NEVER copy the source prompt verbatim into ``instructions``.
       The prompt's literal scaffolding — ``{}`` and ``{placeholder}`` markers,
@@ -91,17 +99,27 @@ class GenerateSignature(dspy.Signature):
        categorical outputs.
        Express literal types as ``literal low, medium, high`` without JSON brackets,
        or set ``type`` to ``Literal`` with an explicit ``literal_values`` list.
-    9. For structured outputs with multiple related fields or nested objects, do not
-       use a plain ``str`` type with JSON instructions. Set ``type`` to ``pydantic``
-       and provide a complete ``pydantic_model`` schema: ``model_name`` (PascalCase),
-       optional ``description``, and typed ``fields`` where each field has a
-       ``name``, a concrete ``type`` (``str``, ``int``, ``float``, ``bool``,
-       ``list[str]``, ``dict[str, str]``, ``Literal``, ``pydantic`` for nesting),
-       a ``description``, a ``required`` flag, ``literal_values`` for Literal
-       fields, and ``nested_model`` for nested objects. Never describe a structured
-       output as a JSON string.
-    10. Simple scalar outputs (a single answer, score, or label) stay as plain types;
-        reserve Pydantic models for well-defined multi-field structures.
+    9. Prefer exactly ONE output field. When the task produces multiple values
+       (for example reasoning, selected IDs, and a final answer), do NOT emit
+       several sibling output fields. Consolidate them into a single output
+       field with ``type`` set to ``pydantic`` and a complete ``pydantic_model``
+       schema: ``model_name`` (PascalCase), optional ``description``, and typed
+       ``fields`` where each field has a ``name``, a concrete ``type``
+       (``str``, ``int``, ``float``, ``bool``, ``list[str]``,
+       ``dict[str, str]``, ``Literal``, ``pydantic`` for nesting), a
+       ``description``, a ``required`` flag, ``literal_values`` for Literal
+       fields, and ``nested_model`` for nested objects. Match each nested
+       field's type to the example values: a JSON array in the source (for
+       example ``"bullet_ids": ["calc-00001"]``) means a list type such as
+       ``list[str]``, never ``str``. Multiple sibling output fields and
+       JSON-string outputs are both wrong; wrap structured results. When the
+       output is a pydantic model, ``instructions`` must NOT mention JSON or
+       output formatting at all — DSPy renders the typed field schema
+       automatically, so sentences like "return the result as a JSON object"
+       are redundant. State only the task, not the wire format.
+    10. Only a genuinely single scalar result (one answer, score, or label) stays
+       as one plain-typed output field without a wrapper model. As soon as more
+       than one value is produced, use the single pydantic output of rule 9.
 
     ## Final submission
 
@@ -112,10 +130,9 @@ class GenerateSignature(dspy.Signature):
       (for example ``TicketClassificationSignature``)
     - ``instructions``: rewritten task doctrine, never a verbatim copy of the
       source prompt
-    - ``inputs``: field objects containing name, description, and type
-    - ``outputs``: field objects containing name, description, and type (plus
-      ``literal_values`` for enumerated outputs and ``pydantic_model`` for
-      structured outputs)
+    - ``outputs``: ideally a single field object — one pydantic-modeled output
+      (``type`` ``pydantic`` plus ``pydantic_model``) when the task produces
+      multiple values, one plain-typed field only for a single scalar result
 
     The final draft may be a dictionary or equivalent structured object. Do not
     serialize it into a JSON string.
@@ -194,28 +211,40 @@ class GenerateSDKSignature(dspy.Signature):
     3. Read all assistant messages to understand the expected output format and fields.
     4. Combine these insights into a coherent signature.
     5. Use semantic, specific field names. ``article`` is better than ``input_text``.
-   6. Write the ``instructions`` as your own concise task doctrine. NEVER paste
+    6. Write the ``instructions`` as your own concise task doctrine. NEVER paste
       message content verbatim into ``instructions``: no JSON format templates,
       "answer in this exact format" blocks, placeholder markers, or separators.
       Those become input and output fields; ``instructions`` states what the
       runtime model must do and holds for any runtime values.
-    7. Use specific types including literals for categorical outputs. For structured
-       assistant outputs (multi-field JSON objects, nested records), set ``type`` to
-       ``pydantic`` with a complete ``pydantic_model`` schema instead of a plain
-       ``str`` described as JSON; use ``literal_values`` for enumerated outputs.
+    7. Prefer exactly ONE output field. When the assistant messages show the
+       model producing multiple values (multi-field JSON objects, nested
+       records, reasoning plus answer), do NOT emit several sibling output
+       fields. Consolidate them into a single output field with ``type`` set
+       to ``pydantic`` and a complete ``pydantic_model`` schema instead of a
+       plain ``str`` described as JSON; use ``literal_values`` for enumerated
+       outputs. Only a genuinely single scalar result stays one plain-typed
+       output field without a wrapper model. Match each nested field's type to
+       the example values: a JSON array in the source (for example
+       ``"bullet_ids": ["calc-00001"]``) means a list type such as
+       ``list[str]``, never ``str``. When the output is a pydantic model,
+       ``instructions`` must NOT mention JSON or output formatting at all —
+       DSPy renders the typed field schema automatically, so sentences like
+       "return the result as a JSON object" are redundant. State only the
+       task, not the wire format.
 
     ## Final submission
 
-    - ``instructions``: rewritten task doctrine derived from system + user
-      context, never a verbatim copy of message content
+    Call ``FINAL(draft=...)`` exactly once. The draft must contain:
 
     - ``name``: specific PascalCase class name ending with ``Signature``
       (for example ``TicketClassificationSignature``)
-    - ``instructions``: complete task doctrine derived from system + user context
+    - ``instructions``: rewritten task doctrine derived from system + user
+      context, never a verbatim copy of message content
     - ``inputs``: field objects with name, description, and type
-    - ``outputs``: field objects with name, description, and type (plus
-      ``literal_values`` for enumerated outputs and ``pydantic_model`` for
-      structured outputs)
+    - ``outputs``: ideally a single field object — one pydantic-modeled output
+      (``type`` ``pydantic`` plus ``pydantic_model``) when the assistant
+      messages show multiple values, one plain-typed field only for a single
+      scalar result
     """
 
     sdk_format: str = dspy.InputField(

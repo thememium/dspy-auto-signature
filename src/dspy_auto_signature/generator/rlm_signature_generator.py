@@ -25,6 +25,7 @@ from dspy_auto_signature.types.signature_spec import (
     FieldType,
     PydanticModelSchema,
     SignatureSpec,
+    _list_type_from_description,
 )
 
 if TYPE_CHECKING:
@@ -655,6 +656,7 @@ class RLMSignatureGenerator(dspy.Module):
         outputs = cls._convert_fields(draft.get("outputs"), FieldType.OUTPUT)
         if not instructions or not inputs or not outputs:
             raise ValueError("RLM returned an incomplete signature draft")
+        instructions = cls._strip_json_output_directives(instructions, outputs)
 
         used = {field.name for field in inputs}
         for output in outputs:
@@ -672,6 +674,52 @@ class RLMSignatureGenerator(dspy.Module):
             raise ValueError("RLM returned a generic placeholder draft")
         return spec
 
+    _JSON_DIRECTIVE_PATTERN = re.compile(
+        r"\bjson\b(?:[- ]compatible)?(?:\s+(?:object|array|structure|format|payload))?",
+        re.IGNORECASE,
+    )
+    _OUTPUT_FORMAT_VERB_PATTERN = re.compile(
+        r"\b(?:return|returns|output|outputs|respond|response|produce|produces|"
+        r"formatted?|structured?|delivered?|provided?)\b",
+        re.IGNORECASE,
+    )
+    _SENTENCE_SPLIT_PATTERN = re.compile(r"(?<=[.!?])\s+")
+
+    @classmethod
+    def _strip_json_output_directives(
+        cls, instructions: str, outputs: list[FieldSpec]
+    ) -> str:
+        """Drop JSON output-format sentences when the output is a pydantic model.
+
+        A pydantic-modeled output renders its schema through DSPy field
+        machinery, so instructions mentioning a JSON wire format are redundant.
+        Sentences are removed only when they mention JSON together with an
+        output-format verb; anything else is preserved.
+        """
+        if not any(field.model_schema is not None for field in outputs):
+            return instructions
+        sentences = cls._SENTENCE_SPLIT_PATTERN.split(instructions)
+        kept = [
+            sentence
+            for sentence in sentences
+            if not (
+                cls._JSON_DIRECTIVE_PATTERN.search(sentence)
+                and cls._OUTPUT_FORMAT_VERB_PATTERN.search(sentence)
+            )
+        ]
+        cleaned = " ".join(part.strip() for part in kept if part.strip())
+        return cleaned if cleaned else instructions
+
+    @staticmethod
+    def _upgrade_list_type(suggested_type: str, description: str) -> str:
+        """Upgrade a string-typed field whose description says "list of X"."""
+        if suggested_type.strip().lower() not in ("str", "string"):
+            return suggested_type
+        upgraded = _list_type_from_description(description)
+        if upgraded is None:
+            return suggested_type
+        return upgraded.value
+
     @classmethod
     def _convert_fields(cls, raw_fields: Any, field_type: FieldType) -> list[FieldSpec]:
         """Normalize every usable field in a complete draft."""
@@ -688,7 +736,9 @@ class RLMSignatureGenerator(dspy.Module):
                 FieldSpec(
                     name=name,
                     description=proposed.description.strip(),
-                    suggested_type=proposed.type.strip() or "string",
+                    suggested_type=cls._upgrade_list_type(
+                        proposed.type.strip() or "string", proposed.description
+                    ),
                     field_type=field_type,
                     literal_values=proposed.literal_values,
                     model_schema=proposed.pydantic_model,
