@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 import json
 import keyword
 import logging
@@ -88,10 +89,30 @@ class _ThreadInterpreterProxy:
     creating thread. The thread-local reference dies with the thread, so the
     proxy's ``__del__`` terminates the sandbox instead of leaking the child
     process for every retired thread.
+
+    ``tools``/``start``/``execute``/``shutdown`` are re-declared explicitly:
+    dspy >=3.3 validates interpreters against the runtime-checkable
+    ``CodeInterpreter`` protocol, and on Python >=3.12 that check uses
+    ``inspect.getattr_static``, which bypasses ``__getattr__`` delegation.
     """
 
     def __init__(self, interpreter: PythonInterpreter) -> None:
         object.__setattr__(self, "_interpreter", interpreter)
+
+    @property
+    def tools(self) -> dict[str, Any]:
+        return object.__getattribute__(self, "_interpreter").tools
+
+    def start(self) -> None:
+        object.__getattribute__(self, "_interpreter").start()
+
+    def execute(self, code: str, variables: dict[str, Any] | None = None) -> Any:
+        return object.__getattribute__(self, "_interpreter").execute(
+            code, variables=variables
+        )
+
+    def shutdown(self) -> None:
+        object.__getattribute__(self, "_interpreter").shutdown()
 
     def __getattr__(self, name: str) -> Any:
         return getattr(object.__getattribute__(self, "_interpreter"), name)
@@ -114,6 +135,29 @@ def close_interpreter() -> None:
         _INTERPRETERS.interpreter = None
 
 
+def _rlm_init_kwargs(max_iterations: int) -> dict[str, Any]:
+    """Build ``dspy.RLM`` constructor kwargs for the installed dspy version.
+
+    The iteration cap was renamed across DSPy versions (``max_iterations``
+    before 3.3, ``max_iters`` from 3.3), so the accepted name is detected from
+    the installed signature. DSPy <3.3 also takes a caller-owned
+    ``interpreter`` at construction; from 3.3 interpreter ownership moved to a
+    per-forward ``interpreter_factory`` and the warm interpreter is passed to
+    ``forward`` instead (see ``RLMSignatureGenerator._call_architect``).
+    """
+    params = inspect.signature(dspy.RLM.__init__).parameters
+    iter_kw = "max_iters" if "max_iters" in params else "max_iterations"
+    kwargs: dict[str, Any] = {iter_kw: max_iterations}
+    if "interpreter" in params:
+        kwargs["interpreter"] = _thread_interpreter()
+    return kwargs
+
+
+def _rlm_takes_positional_interpreter() -> bool:
+    """Whether ``dspy.RLM.forward`` accepts a caller-owned interpreter per call."""
+    return "interpreter_factory" in inspect.signature(dspy.RLM.__init__).parameters
+
+
 class RLMSignatureGenerator(dspy.Module):
     """Generate a ``SignatureSpec`` through one recursive analysis workflow."""
 
@@ -125,28 +169,26 @@ class RLMSignatureGenerator(dspy.Module):
         verbose: bool = False,
     ) -> None:
         super().__init__()
-        interpreter = _thread_interpreter()
-        self.rlm = dspy.RLM(
-            GenerateSignature,
-            max_iterations=max_iterations,
-            max_llm_calls=max_llm_calls,
-            sub_lm=sub_lm,
-            verbose=verbose,
-            interpreter=interpreter,
-        )
-        self.sdk_rlm = dspy.RLM(
-            GenerateSDKSignature,
-            max_iterations=max_iterations,
-            max_llm_calls=max_llm_calls,
-            sub_lm=sub_lm,
-            verbose=verbose,
-            interpreter=interpreter,
-        )
+        rlm_kwargs = _rlm_init_kwargs(max_iterations)
+        rlm_kwargs.update(max_llm_calls=max_llm_calls, sub_lm=sub_lm, verbose=verbose)
+        self.rlm = dspy.RLM(GenerateSignature, **rlm_kwargs)
+        self.sdk_rlm = dspy.RLM(GenerateSDKSignature, **rlm_kwargs)
         # Lightweight LLM-driven alternative: one ChainOfThought call per
         # generation, no sandbox or recursive loop. Shares the same signature
         # contracts as the RLM paths.
         self.cot = dspy.ChainOfThought(GenerateSignature)
         self.cot_sdk = dspy.ChainOfThought(GenerateSDKSignature)
+        # dspy >=3.3 no longer takes an interpreter at RLM construction; the
+        # warm thread interpreter is passed positionally per forward call.
+        self._pass_warm_interpreter = _rlm_takes_positional_interpreter()
+
+    def _call_architect(self, module: Any, context: dict[str, Any]) -> Any:
+        """Call an architect module, handing it the warm interpreter when dspy expects one per call."""
+        if self._pass_warm_interpreter and (
+            module is self.rlm or module is self.sdk_rlm
+        ):
+            return module(_thread_interpreter(), **context)
+        return module(**context)
 
     def forward(
         self,
@@ -200,7 +242,7 @@ class RLMSignatureGenerator(dspy.Module):
         module = self.rlm if mode == "rlm" else self.cot
         try:
             with dspy.settings.context(lm=lm):
-                result = module(**context)
+                result = self._call_architect(module, context)
             return self._draft_to_spec(result.draft)
         except Exception as exc:
             logger.warning(
@@ -235,7 +277,7 @@ class RLMSignatureGenerator(dspy.Module):
 
         try:
             with dspy.settings.context(lm=lm):
-                result = module(**context)
+                result = self._call_architect(module, context)
             spec = self._draft_to_spec(result.draft)
             return self._sanitize_sdk_spec(spec)
         except Exception as exc:
