@@ -61,91 +61,97 @@ class ProposedSignature(BaseModel):
 class GenerateSignature(dspy.Signature):
     """Think deeply about the supplied task context and design one DSPy Signature.
 
-    You are the sole signature architect. Use the recursive environment to inspect
-    all available context before deciding the task doctrine, inputs, outputs, field
-    names, descriptions, and types. Do not delegate these decisions to a later
-    workflow and do not stop after a superficial reading.
+     You are the sole signature architect. Use the recursive environment to inspect
+     all available context before deciding the task doctrine, inputs, outputs, field
+     names, descriptions, and types. Do not delegate these decisions to a later
+     workflow and do not stop after a superficial reading.
 
-    ## Required analysis
+     ## Required analysis
 
-    1. Determine the actual transformation the runtime model must perform.
-    2. Distinguish information available at runtime from values the model must create.
-    3. For datasets, inspect profiles and sample rows together. Use the task hint to
-       identify targets; do not classify columns using cardinality alone.
-    4. For prompts, inspect instructions, examples, placeholders, requested formats,
-       constraints, and implied outputs.
-       Preserve explicitly named runtime inputs exactly. For example, if the prompt
-       names ``message``, ``category``, and ``priority``, use those names rather than
-       inventing ``ticket_message``, ``ticket_category``, or ``ticket_priority``.
-       Placeholder names such as ``{article}`` are authoritative input names.
-    5. Include every necessary input and output, but do not expose internal reasoning
-       steps as fields unless the task explicitly requests them.
-    6. Use semantic names. Never use generic placeholders such as ``input``,
-       ``output``, ``input_text``, ``output_text``, ``data``, ``result``, or
-       ``AutoSignature``. The ``input`` and ``output`` keys in example dicts are
-       structural labels, not field name suggestions.
-    7. Write the ``instructions`` as your own concise task doctrine: what the
-      runtime model must do, the key constraints, and the expected output
-      behavior. NEVER copy the source prompt verbatim into ``instructions``.
-      The prompt's literal scaffolding — ``{}`` and ``{placeholder}`` markers,
-      ``**Section**`` headers, JSON format templates, "answer in this exact
-      format" blocks, example payloads, and separators such as ``---`` — must
-      NOT appear in ``instructions``. DSPy renders inputs and outputs
-      automatically as typed fields, so formatting directives and field
-      listings in the prompt are redundant. Express each placeholder or
-      template slot as an input or output field (rules 4 and 9), and keep
-      ``instructions`` abstract enough to hold for any runtime values.
-    8. Use the most specific practical types, including literal types for known
-       categorical outputs.
-       Express literal types as ``literal low, medium, high`` without JSON brackets,
-       or set ``type`` to ``Literal`` with an explicit ``literal_values`` list.
-    9. Prefer exactly ONE output field. When the task produces multiple values
-       (for example reasoning, selected IDs, and a final answer), do NOT emit
-       several sibling output fields. Consolidate them into a single output
-       field with ``type`` set to ``pydantic`` and a complete ``pydantic_model``
-       schema: ``model_name`` (PascalCase), optional ``description``, and typed
-       ``fields`` where each field has a ``name``, a concrete ``type``
-       (``str``, ``int``, ``float``, ``bool``, ``list[str]``,
-       ``dict[str, str]``, ``Literal``, ``pydantic`` for nesting), a
-       ``description``, a ``required`` flag, ``literal_values`` for Literal
-       fields, and ``nested_model`` for nested objects. Match each nested
-       field's type to the example values: a JSON array in the source (for
-       example ``"bullet_ids": ["calc-00001"]``) means a list type such as
-       ``list[str]``, never ``str``. Multiple sibling output fields and
-       JSON-string outputs are both wrong; wrap structured results. When the
-       output is a pydantic model, ``instructions`` must NOT mention JSON or
-       output formatting at all — DSPy renders the typed field schema
-       automatically, so sentences like "return the result as a JSON object"
-       are redundant. State only the task, not the wire format. Inside a
-       ``pydantic_model``, categorical fields (levels, sentiments, statuses)
-       must use ``Literal`` with ``literal_values`` taken from the prompt's
-       enumerations — for example "urgency level (low, medium, or high)"
-       becomes ``literal_values`` ``[low, medium, high]``, never a plain ``str``.
-       Choose the most specific type per nested field: ``int`` for counts and
-       integers, ``float`` for scores and measurements, ``bool`` for yes/no
-       values, and ``list[...]`` whenever the prompt implies repeated items —
-       counts such as "three takeaways" or "exactly five bullet_ids" mean a
-       list type, never ``str``. Numeric fields described with ranges (for
-       example "score from 0 to 10") are bounded automatically.
+     1. Determine the actual transformation the runtime model must perform.
+     2. Distinguish information available at runtime from values the model must create.
+     3. For datasets, inspect profiles and sample rows together. Use the task hint to
+        identify targets; do not classify columns using cardinality alone.
+     4. For prompts, inspect instructions, examples, placeholders, requested formats,
+        constraints, and implied outputs.
+        Preserve explicitly named runtime inputs exactly. For example, if the prompt
+        names ``message``, ``category``, and ``priority``, use those names rather than
+        inventing ``ticket_message``, ``ticket_category``, or ``ticket_priority``.
+       Placeholder names are authoritative input names in any templating
+       variant — ``{article}``, ``{{article}}``, ``$article``, ``${article}``,
+       ``%article%``, ``[[article]]``, or ``<article>`` all mean an input
+       named ``article``.
+     5. Include every necessary input and output, but do not expose internal reasoning
+        steps as fields unless the task explicitly requests them.
+     6. Use semantic names. Never use generic placeholders such as ``input``,
+        ``output``, ``input_text``, ``output_text``, ``data``, ``result``, or
+        ``AutoSignature``. The ``input`` and ``output`` keys in example dicts are
+        structural labels, not field name suggestions.
+     7. Write the ``instructions`` as your own concise task doctrine: what the
+       runtime model must do, the key constraints, and the expected output
+       behavior. NEVER copy the source prompt verbatim into ``instructions``.
+       The prompt's literal scaffolding — ``{}`` and ``{placeholder}`` markers,
+       ``**Section**`` headers, JSON format templates, "answer in this exact
+       format" blocks, example payloads, and separators such as ``---`` — must
+       NOT appear in ``instructions``. DSPy renders inputs and outputs
+       automatically as typed fields, so formatting directives and field
+       listings in the prompt are redundant. Express each placeholder or
+       template slot as an input or output field (rules 4 and 9), and keep
+       ``instructions`` abstract enough to hold for any runtime values.
+     8. Use the most specific practical types, including literal types for known
+        categorical outputs.
+        Express literal types as ``literal low, medium, high`` without JSON brackets,
+        or set ``type`` to ``Literal`` with an explicit ``literal_values`` list.
+     9. Prefer exactly ONE output field. When the task produces multiple values
+        (for example reasoning, selected IDs, and a final answer), do NOT emit
+        several sibling output fields. Consolidate them into a single output
+        field with ``type`` set to ``pydantic`` and a complete ``pydantic_model``
+        schema: ``model_name`` (PascalCase), optional ``description``, and typed
+        ``fields`` where each field has a ``name``, a concrete ``type``
+        (``str``, ``int``, ``float``, ``bool``, ``list[str]``,
+        ``dict[str, str]``, ``Literal``, ``pydantic`` for nesting), a
+        ``description``, a ``required`` flag, ``literal_values`` for Literal
+        fields, and ``nested_model`` for nested objects. Match each nested
+        field's type to the example values: a JSON array in the source (for
+        example ``"bullet_ids": ["calc-00001"]``) means a list type such as
+        ``list[str]``, never ``str``. Multiple sibling output fields and
+        JSON-string outputs are both wrong; wrap structured results. When the
+        output is a pydantic model, ``instructions`` must NOT mention JSON or
+        output formatting at all — DSPy renders the typed field schema
+        automatically, so sentences like "return the result as a JSON object"
+        are redundant. State only the task, not the wire format. Inside a
+        ``pydantic_model``, categorical fields (levels, sentiments, statuses)
+        must use ``Literal`` with ``literal_values`` taken from the prompt's
+        enumerations — for example "urgency level (low, medium, or high)"
+        becomes ``literal_values`` ``[low, medium, high]``, never a plain ``str``.
+        Choose the most specific type per nested field: ``int`` for counts and
+        integers, ``float`` for scores and measurements, ``bool`` for yes/no
+        values, and ``list[...]`` whenever the prompt implies repeated items —
+        counts such as "three takeaways" or "exactly five bullet_ids" mean a
+        list type, never ``str``. A field whose name names a collection
+        (``bullet_tags``, ``bullet_ids``, ``key_points``) or whose description
+        begins with "List of ..." is a list field even when the item type is
+        not named. Numeric fields described with ranges (for example "score
+        from 0 to 10") are bounded automatically.
     10. Only a genuinely single scalar result (one answer, score, or label) stays
-       as one plain-typed output field without a wrapper model. As soon as more
-       than one value is produced, use the single pydantic output of rule 9.
+        as one plain-typed output field without a wrapper model. As soon as more
+        than one value is produced, use the single pydantic output of rule 9.
 
-    ## Final submission
+     ## Final submission
 
-    Call ``FINAL(draft=...)`` exactly once after completing the analysis. ``draft``
-    must represent the complete signature with:
+     Call ``FINAL(draft=...)`` exactly once after completing the analysis. ``draft``
+     must represent the complete signature with:
 
-    - ``name``: specific PascalCase class name ending with ``Signature``
-      (for example ``TicketClassificationSignature``)
-    - ``instructions``: rewritten task doctrine, never a verbatim copy of the
-      source prompt
-    - ``outputs``: ideally a single field object — one pydantic-modeled output
-      (``type`` ``pydantic`` plus ``pydantic_model``) when the task produces
-      multiple values, one plain-typed field only for a single scalar result
+     - ``name``: specific PascalCase class name ending with ``Signature``
+       (for example ``TicketClassificationSignature``)
+     - ``instructions``: rewritten task doctrine, never a verbatim copy of the
+       source prompt
+     - ``outputs``: ideally a single field object — one pydantic-modeled output
+       (``type`` ``pydantic`` plus ``pydantic_model``) when the task produces
+       multiple values, one plain-typed field only for a single scalar result
 
-    The final draft may be a dictionary or equivalent structured object. Do not
-    serialize it into a JSON string.
+     The final draft may be a dictionary or equivalent structured object. Do not
+     serialize it into a JSON string.
     """
 
     source_kind: str = dspy.InputField(desc="Source kind: prompt or dataset")

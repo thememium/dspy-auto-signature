@@ -27,6 +27,7 @@ from dspy_auto_signature.types.signature_spec import (
     SchemaFieldType,
     SignatureSpec,
     _count_list_type_from_description,
+    _list_name_type,
     _list_type_from_description,
     _numeric_constraint_from_description,
 )
@@ -36,7 +37,77 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_PLACEHOLDER_PATTERN = re.compile(r"\{([a-zA-Z_][a-zA-Z0-9_]*)\}")
+_PLACEHOLDER_NAME = r"[a-zA-Z_][a-zA-Z0-9_]*"
+_PLACEHOLDER_PATTERNS: tuple[re.Pattern[str], ...] = (
+    re.compile(rf"\{{\{{({_PLACEHOLDER_NAME})\}}\}}"),
+    re.compile(rf"\$\{{({_PLACEHOLDER_NAME})\}}"),
+    re.compile(rf"\{{({_PLACEHOLDER_NAME})\}}"),
+    re.compile(rf"%({_PLACEHOLDER_NAME})%"),
+    re.compile(rf"\[\[({_PLACEHOLDER_NAME})\]\]"),
+    re.compile(rf"<(?![/!])({_PLACEHOLDER_NAME})>"),
+    re.compile(rf"\$({_PLACEHOLDER_NAME})"),
+)
+_ANGLE_TAG_STOPWORDS = frozenset(
+    {
+        "a",
+        "b",
+        "i",
+        "u",
+        "p",
+        "br",
+        "em",
+        "li",
+        "ol",
+        "ul",
+        "td",
+        "tr",
+        "th",
+        "h1",
+        "h2",
+        "h3",
+        "h4",
+        "h5",
+        "h6",
+        "body",
+        "code",
+        "div",
+        "head",
+        "html",
+        "span",
+        "strong",
+        "table",
+    }
+)
+
+
+def _extract_placeholder_names(text: str) -> list[str]:
+    """Extract every placeholder-style variable name, in order of appearance.
+
+    Recognizes the templating variants AI prompts commonly use — ``{text}``,
+    ``{{text}}``, ``${text}``, ``$text``, ``%text%``, ``[[text]]``, and
+    ``<text>`` — so any of them becomes an authoritative input name. Closing
+    tags, empty ``{}`` slots, and dollar amounts are never names.
+    """
+    matches: list[tuple[int, str]] = []
+    for pattern in _PLACEHOLDER_PATTERNS:
+        for match in pattern.finditer(text):
+            name = match.group(1)
+            if (
+                pattern is _PLACEHOLDER_PATTERNS[5]
+                and name.lower() in _ANGLE_TAG_STOPWORDS
+            ):
+                continue
+            matches.append((match.start(), name))
+    names: list[str] = []
+    seen: set[str] = set()
+    for _, name in sorted(matches):
+        if name in seen:
+            continue
+        seen.add(name)
+        names.append(name)
+    return names
+
+
 _OUTPUT_CLAUSE_PATTERN = re.compile(
     r"\b(?:predict|classify|determine|identify|estimate|rate|detect|rank"
     r"|output|produce|return|report|extract|generate)\b(?P<clause>[^.;!\n]*)",
@@ -240,7 +311,7 @@ class RLMSignatureGenerator(dspy.Module):
                 except Exception as exc:
                     logger.warning("Dataset structural generation failed: %s", exc)
 
-            if mode == "fast" or _PLACEHOLDER_PATTERN.search(context["task_context"]):
+            if mode == "fast" or _extract_placeholder_names(context["task_context"]):
                 return self._fallback_from_prompt(context["task_context"])
 
         lm = (
@@ -252,7 +323,9 @@ class RLMSignatureGenerator(dspy.Module):
         try:
             with dspy.settings.context(lm=lm):
                 result = self._call_architect(module, context)
-            return self._draft_to_spec(result.draft)
+            return self._ensure_placeholder_inputs(
+                self._draft_to_spec(result.draft), context["task_context"]
+            )
         except Exception as exc:
             logger.warning(
                 "Unified LLM signature generation failed; using grounded fallback: %s",
@@ -271,7 +344,9 @@ class RLMSignatureGenerator(dspy.Module):
         try:
             with dspy.settings.context(lm=lm):
                 result = self.cot(**context)
-            return self._draft_to_spec(result.draft)
+            return self._ensure_placeholder_inputs(
+                self._draft_to_spec(result.draft), context["task_context"]
+            )
         except Exception as exc:
             logger.warning(
                 "CoT signature generation failed; using grounded fallback: %s",
@@ -288,7 +363,9 @@ class RLMSignatureGenerator(dspy.Module):
             with dspy.settings.context(lm=lm):
                 result = self._call_architect(module, context)
             spec = self._draft_to_spec(result.draft)
-            return self._sanitize_sdk_spec(spec)
+            return self._ensure_placeholder_inputs(
+                self._sanitize_sdk_spec(spec), context["messages_json"]
+            )
         except Exception as exc:
             logger.warning(
                 "SDK signature generation failed; using standard fallback: %s",
@@ -425,7 +502,7 @@ class RLMSignatureGenerator(dspy.Module):
         """Derive inputs from user-message structure: placeholders, JSON, or the message itself."""
         names: list[str] = []
         for part in user_parts:
-            names.extend(_PLACEHOLDER_PATTERN.findall(part))
+            names.extend(_extract_placeholder_names(part))
         if names:
             used: set[str] = set()
             inputs: list[FieldSpec] = []
@@ -715,19 +792,22 @@ class RLMSignatureGenerator(dspy.Module):
         return cleaned if cleaned else instructions
 
     @staticmethod
-    def _upgrade_scalar_type(suggested_type: str, description: str) -> str:
-        """Upgrade a plain string-typed field based on its description.
+    def _upgrade_scalar_type(name: str, suggested_type: str, description: str) -> str:
+        """Upgrade a plain string-typed field based on its name and description.
 
-        "list of strings" becomes ``list[str]``, "score from 0 to 10" becomes
-        ``float``, "count of items" becomes ``int``, and counts such as "three
-        takeaways" become ``list[str]``. Range bounds only apply to pydantic
-        model fields, where ``ge``/``le`` are enforced at runtime.
+        Collection-style names (``bullet_tags``, ``bullet_ids``) become
+        ``list[str]``; "list of strings" becomes ``list[str]``; "score from 0
+        to 10" becomes ``float``; "count of items" becomes ``int``; counts such
+        as "three takeaways" become ``list[str]``. Range bounds only apply to
+        pydantic model fields, where ``ge``/``le`` are enforced at runtime.
         """
         if suggested_type.strip().lower() not in ("str", "string"):
             return suggested_type
-        upgraded = _list_type_from_description(
-            description
-        ) or _count_list_type_from_description(description)
+        upgraded = (
+            _list_name_type(name)
+            or _list_type_from_description(description)
+            or _count_list_type_from_description(description)
+        )
         if upgraded is not None:
             return upgraded.value
         numeric = _numeric_constraint_from_description(description)
@@ -830,7 +910,9 @@ class RLMSignatureGenerator(dspy.Module):
                     name=name,
                     description=proposed.description.strip(),
                     suggested_type=cls._upgrade_scalar_type(
-                        proposed.type.strip() or "string", proposed.description
+                        name,
+                        proposed.type.strip() or "string",
+                        proposed.description,
                     ),
                     field_type=field_type,
                     literal_values=proposed.literal_values,
@@ -838,6 +920,34 @@ class RLMSignatureGenerator(dspy.Module):
                 )
             )
         return fields
+
+    @classmethod
+    def _ensure_placeholder_inputs(
+        cls, spec: SignatureSpec, text: str
+    ) -> SignatureSpec:
+        """Guarantee every placeholder variable in the source exists as an input.
+
+        Placeholders are the user's authoritative variable names; whatever
+        variant the architect missed gets appended so the signature stays
+        consistent with what the user wrote.
+        """
+        used = {field.name for field in spec.inputs} | {
+            field.name for field in spec.outputs
+        }
+        for raw_name in _extract_placeholder_names(text):
+            name = cls._normalize_field_name(raw_name)
+            if name in used:
+                continue
+            used.add(name)
+            spec.inputs.append(
+                FieldSpec(
+                    name=name,
+                    description=f"The {name.replace('_', ' ')} provided for the task",
+                    suggested_type="string",
+                    field_type=FieldType.INPUT,
+                )
+            )
+        return spec
 
     @classmethod
     def _normalize_proposed_field(cls, raw_field: Any) -> ProposedField | None:
@@ -1043,9 +1153,9 @@ class RLMSignatureGenerator(dspy.Module):
     def _fallback_from_prompt(cls, prompt: str) -> SignatureSpec:
         """Build a conservative semantic signature from raw prompt text."""
         text = prompt.strip() or "Produce the requested result."
-        input_names = list(
-            dict.fromkeys(re.findall(r"\{([a-zA-Z_][a-zA-Z0-9_]*)\}", text))
-        ) or [cls._infer_prompt_input_name(text)]
+        input_names = list(dict.fromkeys(_extract_placeholder_names(text))) or [
+            cls._infer_prompt_input_name(text)
+        ]
         extracted = cls._extract_output_names(text, reserved=set(input_names))
         inferred = cls._infer_prompt_output_name(text)
         if len(extracted) >= 2 or (extracted and inferred == "task_result"):
