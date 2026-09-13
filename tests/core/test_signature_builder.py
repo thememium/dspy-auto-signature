@@ -713,3 +713,40 @@ class TestPydanticOutputFields:
         assert 'summary: str = dspy.OutputField(desc="One-line summary")' in (
             Sig.to_source()
         )
+
+
+class TestPydanticSchemaImports:
+    def test_dict_str_any_field_needs_typing_any_import(self) -> None:
+        schema = PydanticModelSchema.model_validate(
+            {
+                "model_name": "Loose",
+                "fields": [
+                    {"name": "meta", "type": "dict[str, Any]", "description": "Meta"}
+                ],
+            }
+        )
+        assert _collect_schema_imports([schema]) == {
+            "from pydantic import BaseModel, Field",
+            "from typing import Any",
+        }
+
+    def test_literal_and_any_together(self) -> None:
+        schema = PydanticModelSchema.model_validate(
+            {
+                "model_name": "Mixed",
+                "fields": [
+                    {
+                        "name": "kind",
+                        "type": "Literal",
+                        "literal_values": ["a"],
+                        "description": "Kind",
+                    },
+                    {"name": "meta", "type": "dict[str, Any]", "description": "Meta"},
+                ],
+            }
+        )
+        assert _collect_schema_imports([schema]) == {
+            "from pydantic import BaseModel, Field",
+            "from typing import Any",
+            "from typing import Literal",
+        }

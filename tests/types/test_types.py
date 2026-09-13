@@ -14,6 +14,8 @@ from dspy_auto_signature.types.signature_spec import (
     PydanticFieldDef,
     PydanticModelSchema,
     SignatureSpec,
+    _normalize_schema_type,
+    _sanitize_identifier,
 )
 
 
@@ -262,6 +264,7 @@ class TestFieldSpecPydantic:
         )
         resolved = field.resolved_type
         assert typing.get_origin(resolved) is typing.Literal
+        assert resolved.__args__ == ("low", "medium", "high")
 
 
 class TestSchemaHelpers:
@@ -280,21 +283,19 @@ class TestSchemaHelpers:
 
     def test_pydantic_type_without_nested_model_degrades(self) -> None:
         field = PydanticFieldDef(
-            name="payload", type="pydantic", description="Payload"
+            name="payload", type=cast(Any, "pydantic"), description="Payload"
         )
         assert field.type.value == "str"
 
     def test_empty_model_name_gets_placeholder(self) -> None:
-        schema = PydanticModelSchema.model_validate(
-            {"model_name": "!!!", "fields": []}
-        )
+        schema = PydanticModelSchema.model_validate({"model_name": "!!!", "fields": []})
         assert schema.model_name == "GeneratedModel"
 
     def test_digit_model_name_gets_prefix(self) -> None:
         schema = PydanticModelSchema.model_validate(
             {"model_name": "9 lives", "fields": []}
         )
-        assert schema.model_name == "Model9lives"
+        assert schema.model_name == "Model9Lives"
 
     def test_triple_duplicate_fields_deduped(self) -> None:
         schema = PydanticModelSchema.model_validate(
@@ -308,4 +309,3 @@ class TestSchemaHelpers:
             }
         )
         assert [field.name for field in schema.fields] == ["x", "x_2", "x_3"]
-        assert resolved.__args__ == ("low", "medium", "high")

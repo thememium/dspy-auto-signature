@@ -22,6 +22,7 @@ from dspy_auto_signature.types.signature_spec import (
     FieldSpec,
     FieldType,
     ParsedPrompt,
+    PydanticModelSchema,
     SignatureSpec,
 )
 
@@ -1602,3 +1603,31 @@ class TestPydanticDraftConversion:
         field = ProposedField(name="answer", description="The answer")
         assert field.literal_values is None
         assert field.pydantic_model is None
+
+    def test_existing_model_schema_instance_is_passed_through(self) -> None:
+        schema = PydanticModelSchema.model_validate(
+            {
+                "model_name": "ContactRecord",
+                "fields": [{"name": "name", "type": "str", "description": "Name"}],
+            }
+        )
+        assert RLMSignatureGenerator._parse_model_schema(schema) is schema
+
+    def test_unparseable_model_schema_payload_is_dropped(self) -> None:
+        draft = {
+            "name": "JunkSchema",
+            "instructions": "Extract things.",
+            "inputs": [{"name": "message", "description": "The message"}],
+            "outputs": [
+                {
+                    "name": "result",
+                    "description": "The result",
+                    "type": "pydantic",
+                    "pydantic_model": "not json at all",
+                },
+                {"name": "fallback", "description": "The fallback"},
+            ],
+        }
+        spec = RLMSignatureGenerator._draft_to_spec(draft)
+        assert spec.outputs[0].model_schema is None
+        SignatureBuilder.build(spec)
