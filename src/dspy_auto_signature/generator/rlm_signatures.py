@@ -121,6 +121,12 @@ class GenerateSignature(dspy.Signature):
        must use ``Literal`` with ``literal_values`` taken from the prompt's
        enumerations — for example "urgency level (low, medium, or high)"
        becomes ``literal_values`` ``[low, medium, high]``, never a plain ``str``.
+       Choose the most specific type per nested field: ``int`` for counts and
+       integers, ``float`` for scores and measurements, ``bool`` for yes/no
+       values, and ``list[...]`` whenever the prompt implies repeated items —
+       counts such as "three takeaways" or "exactly five bullet_ids" mean a
+       list type, never ``str``. Numeric fields described with ranges (for
+       example "score from 0 to 10") are bounded automatically.
     10. Only a genuinely single scalar result (one answer, score, or label) stays
        as one plain-typed output field without a wrapper model. As soon as more
        than one value is produced, use the single pydantic output of rule 9.
@@ -238,7 +244,10 @@ class GenerateSDKSignature(dspy.Signature):
        fields (levels, sentiments, statuses) must use ``Literal`` with
        ``literal_values`` taken from the message's enumerations — for example
        "urgency level (low, medium, or high)" becomes ``literal_values``
-       ``[low, medium, high]``, never a plain ``str``.
+       ``[low, medium, high]``, never a plain ``str``. Choose the most specific
+       type per nested field: ``int`` for counts, ``float`` for scores, ``bool``
+       for yes/no values, and ``list[...]`` for repeated items — counts such as
+       "three takeaways" mean a list type, never ``str``.
 
     ## Final submission
 

@@ -134,6 +134,142 @@ def _list_type_from_description(description: str) -> SchemaFieldType | None:
     return None
 
 
+_INT_CUE_PATTERN = re.compile(
+    r"\b(?:integer|whole\s+number|count|rank|index|quantity|total)\b|\bnumber\s+of\b",
+    re.IGNORECASE,
+)
+_PERCENT_CUE_PATTERN = re.compile(r"\bpercent(?:age)?\b", re.IGNORECASE)
+_FLOAT_CUE_PATTERN = re.compile(
+    r"\b(?:score|rating|age|amount|ratio|rate|temperature)\b", re.IGNORECASE
+)
+_NUMERIC_RANGE_PATTERN = re.compile(
+    r"\b(?:from|between)\s+(-?\d+(?:\.\d+)?)\s+(?:to|and)\s+(-?\d+(?:\.\d+)?)",
+    re.IGNORECASE,
+)
+_PERCENT_MIN = 0.0
+_PERCENT_MAX = 100.0
+
+
+def _numeric_constraint_from_description(
+    description: str,
+) -> tuple[SchemaFieldType, float | None, float | None] | None:
+    """Infer a numeric type and inclusive bounds from a field description.
+
+    Requires a numeric cue word so prose like "level 1 to 3 of the process"
+    never promotes. "score from 0 to 10" becomes ``float`` with ``ge=0``,
+    ``le=10``; "count between 1 and 10" becomes ``int`` with the same bounds;
+    a bare "percentage" defaults to ``float`` bounded 0-100.
+    """
+    has_int_cue = bool(_INT_CUE_PATTERN.search(description))
+    has_percent_cue = bool(_PERCENT_CUE_PATTERN.search(description))
+    has_float_cue = bool(
+        re.search(r"\d", description) and _FLOAT_CUE_PATTERN.search(description)
+    )
+    if not (has_int_cue or has_percent_cue or has_float_cue):
+        return None
+    low: float | None = None
+    high: float | None = None
+    match = _NUMERIC_RANGE_PATTERN.search(description)
+    if match is not None:
+        low, high = float(match.group(1)), float(match.group(2))
+        if low > high:
+            low = None
+            high = None
+    if low is not None and high is not None:
+        if low.is_integer() and high.is_integer() and has_int_cue:
+            return SchemaFieldType.INTEGER, low, high
+        return SchemaFieldType.FLOAT, low, high
+    if has_int_cue:
+        return SchemaFieldType.INTEGER, None, None
+    if has_percent_cue:
+        return SchemaFieldType.FLOAT, _PERCENT_MIN, _PERCENT_MAX
+    return SchemaFieldType.FLOAT, None, None
+
+
+_COUNT_LIST_PATTERN = re.compile(
+    r"\b(?:exactly\s+)?(two|three|four|five|six|seven|eight|nine|ten|\d+)\s+([a-z][a-z-]*)",
+    re.IGNORECASE,
+)
+_COUNT_LIST_STOPWORDS = frozenset(
+    {
+        "a",
+        "an",
+        "and",
+        "are",
+        "be",
+        "been",
+        "in",
+        "is",
+        "of",
+        "on",
+        "or",
+        "the",
+        "to",
+        "was",
+        "were",
+        "character",
+        "characters",
+        "chapter",
+        "chapters",
+        "choice",
+        "choices",
+        "day",
+        "days",
+        "digit",
+        "digits",
+        "hour",
+        "hours",
+        "line",
+        "lines",
+        "method",
+        "methods",
+        "minute",
+        "minutes",
+        "month",
+        "months",
+        "option",
+        "options",
+        "page",
+        "pages",
+        "paragraph",
+        "paragraphs",
+        "part",
+        "parts",
+        "percent",
+        "section",
+        "sections",
+        "sentence",
+        "sentences",
+        "step",
+        "steps",
+        "time",
+        "times",
+        "type",
+        "types",
+        "variant",
+        "variants",
+        "version",
+        "versions",
+        "way",
+        "ways",
+        "week",
+        "weeks",
+        "word",
+        "words",
+        "year",
+        "years",
+    }
+)
+
+
+def _count_list_type_from_description(description: str) -> SchemaFieldType | None:
+    """Infer ``list[str]`` from explicit counts such as "three key takeaways"."""
+    for match in _COUNT_LIST_PATTERN.finditer(description):
+        if match.group(2).lower() not in _COUNT_LIST_STOPWORDS:
+            return SchemaFieldType.LIST_STRING
+    return None
+
+
 _MAX_SCHEMA_DEPTH = 8
 
 
@@ -180,6 +316,12 @@ class PydanticFieldDef(BaseModel):
     literal_values: list[str | int] | None = Field(
         default=None, description="Allowed values for Literal types"
     )
+    ge: float | None = Field(
+        default=None, description="Inclusive lower bound for numeric fields"
+    )
+    le: float | None = Field(
+        default=None, description="Inclusive upper bound for numeric fields"
+    )
     nested_model: PydanticModelSchema | None = Field(
         default=None, description="Nested Pydantic model for PYDANTIC_MODEL fields"
     )
@@ -209,8 +351,15 @@ class PydanticFieldDef(BaseModel):
         if self.type is SchemaFieldType.STRING and self.literal_values:
             self.type = SchemaFieldType.LITERAL
         if self.type is SchemaFieldType.STRING and self.description:
-            upgraded = _list_type_from_description(self.description)
-            if upgraded is not None:
+            upgraded: SchemaFieldType | tuple[SchemaFieldType, float, float] | None = (
+                _list_type_from_description(self.description)
+                or _count_list_type_from_description(self.description)
+            )
+            if upgraded is None:
+                numeric = _numeric_constraint_from_description(self.description)
+                if numeric is not None:
+                    self.type, self.ge, self.le = numeric
+            else:
                 self.type = upgraded
         return self
 
@@ -239,6 +388,10 @@ class PydanticFieldDef(BaseModel):
         args: list[str] = []
         if self.description:
             args.append(f"description={self.description!r}")
+        if self.ge is not None:
+            args.append(f"ge={int(self.ge) if self.ge.is_integer() else repr(self.ge)}")
+        if self.le is not None:
+            args.append(f"le={int(self.le) if self.le.is_integer() else repr(self.le)}")
         if not self.required:
             args.append("default=None")
         initializer = f"Field({', '.join(args)})" if args else "Field()"
@@ -310,14 +463,20 @@ class PydanticModelSchema(BaseModel):
         if self._built_model is None:
             definitions: dict[str, tuple[Any, Any]] = {}
             for field in self.fields:
+                constraints: dict[str, Any] = {}
+                if field.ge is not None:
+                    constraints["ge"] = field.ge
+                if field.le is not None:
+                    constraints["le"] = field.le
                 if field.required:
-                    info = (
-                        Field(description=field.description)
-                        if field.description
-                        else FieldInfo()
-                    )
+                    if field.description or constraints:
+                        info = Field(description=field.description, **constraints)
+                    else:
+                        info = FieldInfo()
                 else:
-                    info = Field(default=None, description=field.description)
+                    info = Field(
+                        default=None, description=field.description, **constraints
+                    )
                 definitions[field.name] = (field.annotation(), info)
             self._built_model = cast(
                 "type[BaseModel]",

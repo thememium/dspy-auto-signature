@@ -26,7 +26,9 @@ from dspy_auto_signature.types.signature_spec import (
     PydanticModelSchema,
     SchemaFieldType,
     SignatureSpec,
+    _count_list_type_from_description,
     _list_type_from_description,
+    _numeric_constraint_from_description,
 )
 
 if TYPE_CHECKING:
@@ -713,14 +715,25 @@ class RLMSignatureGenerator(dspy.Module):
         return cleaned if cleaned else instructions
 
     @staticmethod
-    def _upgrade_list_type(suggested_type: str, description: str) -> str:
-        """Upgrade a string-typed field whose description says "list of X"."""
+    def _upgrade_scalar_type(suggested_type: str, description: str) -> str:
+        """Upgrade a plain string-typed field based on its description.
+
+        "list of strings" becomes ``list[str]``, "score from 0 to 10" becomes
+        ``float``, "count of items" becomes ``int``, and counts such as "three
+        takeaways" become ``list[str]``. Range bounds only apply to pydantic
+        model fields, where ``ge``/``le`` are enforced at runtime.
+        """
         if suggested_type.strip().lower() not in ("str", "string"):
             return suggested_type
-        upgraded = _list_type_from_description(description)
-        if upgraded is None:
-            return suggested_type
-        return upgraded.value
+        upgraded = _list_type_from_description(
+            description
+        ) or _count_list_type_from_description(description)
+        if upgraded is not None:
+            return upgraded.value
+        numeric = _numeric_constraint_from_description(description)
+        if numeric is not None:
+            return numeric[0].value
+        return suggested_type
 
     _ENUMERATION_PATTERN = re.compile(r"\(\s*([^()]+?)\s*\)")
 
@@ -816,7 +829,7 @@ class RLMSignatureGenerator(dspy.Module):
                 FieldSpec(
                     name=name,
                     description=proposed.description.strip(),
-                    suggested_type=cls._upgrade_list_type(
+                    suggested_type=cls._upgrade_scalar_type(
                         proposed.type.strip() or "string", proposed.description
                     ),
                     field_type=field_type,
