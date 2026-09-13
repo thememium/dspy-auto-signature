@@ -205,6 +205,34 @@ class TestPydanticModelSchema:
         )
         assert field.type.value == "str"
 
+    def test_list_description_upgrades_string_type(self) -> None:
+        """A STRING field described as "list of strings" becomes list[str]."""
+        field = PydanticFieldDef(
+            name="bullet_ids",
+            type=cast(Any, "str"),
+            description="List of bullet_id strings relevant to the answer",
+        )
+        assert field.type.value == "list[str]"
+        assert field.annotation() == list[str]
+
+    def test_list_description_integers(self) -> None:
+        field = PydanticFieldDef(
+            name="scores", type=cast(Any, "string"), description="list of integers"
+        )
+        assert field.type.value == "list[int]"
+
+    def test_plain_string_description_stays_string(self) -> None:
+        field = PydanticFieldDef(
+            name="answer", type=cast(Any, "str"), description="The final answer"
+        )
+        assert field.type.value == "str"
+
+    def test_list_description_unknown_item_stays_string(self) -> None:
+        field = PydanticFieldDef(
+            name="scores", type=cast(Any, "str"), description="List of scores"
+        )
+        assert field.type.value == "str"
+
     def test_ordered_models_nested_first(self) -> None:
         schema = PydanticModelSchema.model_validate(_contact_schema())
         assert [model.model_name for model in schema.ordered_models()] == [

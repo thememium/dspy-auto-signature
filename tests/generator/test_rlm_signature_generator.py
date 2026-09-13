@@ -119,6 +119,110 @@ class TestDraftNormalization:
         assert spec.outputs[0].suggested_type == "literal low, high"
         SignatureBuilder.build(spec)
 
+    def test_string_output_with_list_description_upgrades_to_list(self) -> None:
+        """A str-typed draft field described as "list of X" becomes list[str]."""
+        draft = {
+            "name": "AnswerExtractor",
+            "instructions": "Answer the question using the playbook.",
+            "inputs": [
+                {"name": "question", "description": "The question", "type": "string"}
+            ],
+            "outputs": [
+                {
+                    "name": "bullet_ids",
+                    "description": "List of bullet_id strings from the playbook",
+                    "type": "string",
+                }
+            ],
+        }
+        spec = RLMSignatureGenerator._draft_to_spec(draft)
+        assert spec.outputs[0].suggested_type == "list[str]"
+        SignatureBuilder.build(spec)
+
+    def test_json_directive_removed_for_pydantic_output(self) -> None:
+        """JSON output-format sentences are stripped when output is pydantic."""
+        draft = {
+            "name": "PlaybookAnalysis",
+            "instructions": (
+                "Analyze the question using the playbook strategies. "
+                "Return these three pieces of information in a JSON-compatible "
+                "structure. Avoid mistakes listed in the reflection."
+            ),
+            "inputs": [
+                {"name": "question", "description": "The question", "type": "string"}
+            ],
+            "outputs": [
+                {
+                    "name": "result",
+                    "description": "The structured result",
+                    "type": "pydantic",
+                    "pydantic_model": {
+                        "model_name": "AnalysisResult",
+                        "fields": [
+                            {
+                                "name": "answer",
+                                "type": "str",
+                                "description": "The final answer",
+                            }
+                        ],
+                    },
+                }
+            ],
+        }
+        spec = RLMSignatureGenerator._draft_to_spec(draft)
+        assert "JSON" not in spec.instructions
+        assert "playbook strategies" in spec.instructions
+        assert "reflection" in spec.instructions
+        SignatureBuilder.build(spec)
+
+    def test_json_directive_kept_for_plain_output(self) -> None:
+        """JSON format mentions stay when the output is a plain str field."""
+        draft = {
+            "name": "AnswerExtractor",
+            "instructions": "Return the answer as a JSON object.",
+            "inputs": [
+                {"name": "question", "description": "The question", "type": "string"}
+            ],
+            "outputs": [
+                {"name": "answer", "description": "The answer", "type": "string"}
+            ],
+        }
+        spec = RLMSignatureGenerator._draft_to_spec(draft)
+        assert "JSON" in spec.instructions
+        SignatureBuilder.build(spec)
+
+    def test_json_input_parsing_mention_is_preserved(self) -> None:
+        """Sentences about JSON inputs without an output verb are kept."""
+        draft = {
+            "name": "LogParser",
+            "instructions": (
+                "The input may arrive as JSON. Extract the error summary."
+            ),
+            "inputs": [
+                {"name": "log", "description": "The log line", "type": "string"}
+            ],
+            "outputs": [
+                {
+                    "name": "summary",
+                    "description": "The summary",
+                    "type": "pydantic",
+                    "pydantic_model": {
+                        "model_name": "Summary",
+                        "fields": [
+                            {
+                                "name": "text",
+                                "type": "str",
+                                "description": "Summary text",
+                            }
+                        ],
+                    },
+                }
+            ],
+        }
+        spec = RLMSignatureGenerator._draft_to_spec(draft)
+        assert "JSON" in spec.instructions
+        SignatureBuilder.build(spec)
+
     def test_draft_accepts_aliases_and_repairs_fields(self) -> None:
         draft = {
             "name": "ticket classifier!",
