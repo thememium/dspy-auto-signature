@@ -23,15 +23,15 @@ class TestTypeResolver:
             ("boolean", bool),
             ("bool", bool),
             ("yes/no", bool),
-            ("list", list),
-            ("array", list),
-            ("dict", dict),
-            ("dictionary", dict),
+            ("list", list[str]),
+            ("array", list[str]),
+            ("dict", dict[str, str]),
+            ("dictionary", dict[str, str]),
             ("any", Any),
         ],
     )
-    def test_primitive_aliases(self, description: str, expected: type) -> None:
-        assert TypeResolver.resolve(description) is expected
+    def test_primitive_aliases(self, description: str, expected: object) -> None:
+        assert TypeResolver.resolve(description) == expected
 
     @pytest.mark.parametrize(
         ("description", "expected_container", "expected_inner"),
@@ -200,6 +200,23 @@ class TestTypeResolver:
         assert TypeResolver.resolve(description) == expected
 
     # --- Pydantic model registration ---
+
+    def test_bare_collections_are_typed(self) -> None:
+        """Bare "dict"/"list" aliases resolve to their str-typed forms."""
+        assert TypeResolver.resolve("dict") == dict[str, str]
+        assert TypeResolver.resolve("dictionary") == dict[str, str]
+        assert TypeResolver.resolve("map") == dict[str, str]
+        assert TypeResolver.resolve("object") == dict[str, str]
+        assert TypeResolver.resolve("list") == list[str]
+        assert TypeResolver.resolve("array") == list[str]
+
+    def test_list_of_dicts_is_typed(self) -> None:
+        resolved = TypeResolver.resolve("list of dicts")
+        assert resolved == list[dict[str, str]]
+
+    def test_array_of_objects_is_typed(self) -> None:
+        resolved = TypeResolver.resolve("array of objects")
+        assert resolved == list[dict[str, str]]
 
     def test_register_pydantic_model(self) -> None:
         class FakeModel:

@@ -511,11 +511,49 @@ class TestSchemaHelpers:
         assert _normalize_schema_type("None | str") == ("str", False)
         assert _normalize_schema_type("int") == ("int", True)
 
-    def test_pydantic_type_without_nested_model_degrades(self) -> None:
+    def test_pydantic_type_without_nested_model_degrades_to_dict(self) -> None:
+        """An "object" proposal without a nested schema becomes dict[str, str]."""
         field = PydanticFieldDef(
             name="payload", type=cast(Any, "pydantic"), description="Payload"
         )
-        assert field.type.value == "str"
+        assert field.type.value == "dict[str, str]"
+        assert field.annotation() == dict[str, str]
+
+    def test_dict_proposal_becomes_typed_dict(self) -> None:
+        """A bare "dict" proposal degrades to dict[str, str], never bare dict."""
+        field = PydanticFieldDef(
+            name="metadata", type=cast(Any, "dict"), description="Item metadata"
+        )
+        assert field.type.value == "dict[str, str]"
+        assert field.annotation() == dict[str, str]
+        assert "dict[str, str]" in field.field_source()
+
+    def test_list_of_dicts_annotation_is_typed(self) -> None:
+        field = PydanticFieldDef(
+            name="records", type=cast(Any, "list of dicts"), description="The records"
+        )
+        assert field.type.value == "list[dict]"
+        assert field.annotation() == list[dict[str, str]]
+        assert "list[dict[str, str]]" in field.annotation_source()
+        assert "list[dict[str, str]]" in field.field_source()
+
+    def test_built_model_with_typed_dict_validates(self) -> None:
+        schema = PydanticModelSchema.model_validate(
+            {
+                "model_name": "Tagged",
+                "fields": [
+                    {
+                        "name": "metadata",
+                        "type": "dict",
+                        "description": "Item metadata",
+                    }
+                ],
+            }
+        )
+        model = cast(Any, schema.build_model())
+        assert model(metadata={"a": "b"}).metadata == {"a": "b"}
+        with pytest.raises(PydanticValidationError):
+            model(metadata={"a": 12345})
 
     def test_empty_model_name_gets_placeholder(self) -> None:
         schema = PydanticModelSchema.model_validate({"model_name": "!!!", "fields": []})
