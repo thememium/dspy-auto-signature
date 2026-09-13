@@ -256,6 +256,132 @@ class TestPydanticModelSchema:
         )
         assert field.type.value == "str"
 
+    def test_int_range_inferred_from_description(self) -> None:
+        field = PydanticFieldDef(
+            name="matched_count",
+            type=cast(Any, "str"),
+            description="Count of matching documents (between 1 and 10)",
+        )
+        assert field.type.value == "int"
+        assert field.ge == 1.0
+        assert field.le == 10.0
+        assert field.annotation() is int
+
+    def test_float_range_inferred_from_description(self) -> None:
+        field = PydanticFieldDef(
+            name="score",
+            type=cast(Any, "str"),
+            description="Score from 0 to 10",
+        )
+        assert field.type.value == "float"
+        assert field.ge == 0.0
+        assert field.le == 10.0
+
+    def test_reversed_range_falls_back_to_cue_only(self) -> None:
+        field = PydanticFieldDef(
+            name="score", type=cast(Any, "str"), description="Score from 10 to 0"
+        )
+        assert field.type.value == "float"
+        assert field.ge is None
+        assert field.le is None
+
+    def test_reversed_range_with_percent_defaults_to_bounds(self) -> None:
+        field = PydanticFieldDef(
+            name="match",
+            type=cast(Any, "str"),
+            description="Percentage from 200 to 100",
+        )
+        assert field.type.value == "float"
+        assert field.ge == 0.0
+        assert field.le == 100.0
+
+    def test_int_cue_without_range(self) -> None:
+        field = PydanticFieldDef(
+            name="count",
+            type=cast(Any, "str"),
+            description="Number of items in the cart",
+        )
+        assert field.type.value == "int"
+        assert field.ge is None
+        assert field.le is None
+
+    def test_percent_cue_defaults_to_zero_hundred(self) -> None:
+        field = PydanticFieldDef(
+            name="match", type=cast(Any, "str"), description="Match percentage"
+        )
+        assert field.type.value == "float"
+        assert field.ge == 0.0
+        assert field.le == 100.0
+
+    def test_float_cue_requires_digit(self) -> None:
+        field = PydanticFieldDef(
+            name="customer_age",
+            type=cast(Any, "str"),
+            description="Age of the customer in years",
+        )
+        assert field.type.value == "str"
+
+    def test_field_source_renders_ge_le(self) -> None:
+        field = PydanticFieldDef(
+            name="score",
+            type=cast(Any, "str"),
+            description="Score from 0 to 10",
+        )
+        source = field.field_source()
+        assert "ge=0" in source
+        assert "le=10" in source
+
+    def test_built_model_enforces_bounds(self) -> None:
+        schema = PydanticModelSchema.model_validate(
+            {
+                "model_name": "Graded",
+                "fields": [
+                    {
+                        "name": "score",
+                        "type": "str",
+                        "description": "Score from 0 to 10",
+                    }
+                ],
+            }
+        )
+        model = cast(Any, schema.build_model())
+        assert model(score=7).score == 7
+        with pytest.raises(PydanticValidationError):
+            model(score=11)
+
+    def test_count_list_inferred_from_description(self) -> None:
+        field = PydanticFieldDef(
+            name="takeaways",
+            type=cast(Any, "str"),
+            description="Exactly three bullet-point key takeaways from the article.",
+        )
+        assert field.type.value == "list[str]"
+        assert field.annotation() == list[str]
+
+    def test_count_with_stopword_stays_string(self) -> None:
+        field = PydanticFieldDef(
+            name="summary",
+            type=cast(Any, "str"),
+            description="Summarize in three sentences.",
+        )
+        assert field.type.value == "str"
+
+    def test_level_description_without_digits_stays_string(self) -> None:
+        field = PydanticFieldDef(
+            name="urgency_level",
+            type=cast(Any, "str"),
+            description="Urgency level of the ticket.",
+        )
+        assert field.type.value == "str"
+
+    def test_built_model_field_without_description(self) -> None:
+        """A numeric-free required field without a description still builds."""
+        schema = PydanticModelSchema.model_validate(
+            {"model_name": "Bare", "fields": [{"name": "value", "type": "str"}]}
+        )
+        model = cast(Any, schema.build_model())
+        assert model(value="x").value == "x"
+
     def test_ordered_models_nested_first(self) -> None:
         schema = PydanticModelSchema.model_validate(_contact_schema())
         assert [model.model_name for model in schema.ordered_models()] == [

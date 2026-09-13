@@ -8,6 +8,7 @@ from typing import Any, Literal, get_args, get_origin
 
 import dspy
 import pytest
+from pydantic import ValidationError as PydanticValidationError
 
 from dspy_auto_signature.core.config import Config
 from dspy_auto_signature.core.signature_builder import SignatureBuilder
@@ -138,6 +139,107 @@ class TestDraftNormalization:
         spec = RLMSignatureGenerator._draft_to_spec(draft)
         assert spec.outputs[0].suggested_type == "list[str]"
         SignatureBuilder.build(spec)
+
+    def test_string_output_with_numeric_description_upgrades(self) -> None:
+        """A str-typed draft field described as "score from 0 to 10" becomes float."""
+        draft = {
+            "name": "Scorer",
+            "instructions": "Score the answer quality.",
+            "inputs": [
+                {"name": "answer", "description": "The answer", "type": "string"}
+            ],
+            "outputs": [
+                {
+                    "name": "score",
+                    "description": "Score from 0 to 10",
+                    "type": "string",
+                }
+            ],
+        }
+        spec = RLMSignatureGenerator._draft_to_spec(draft)
+        assert spec.outputs[0].suggested_type == "float"
+        SignatureBuilder.build(spec)
+
+    def test_string_output_with_count_cue_upgrades_to_int(self) -> None:
+        draft = {
+            "name": "Counter",
+            "instructions": "Count the matching items.",
+            "inputs": [
+                {"name": "document", "description": "The document", "type": "string"}
+            ],
+            "outputs": [
+                {
+                    "name": "matches",
+                    "description": "Number of matching passages",
+                    "type": "string",
+                }
+            ],
+        }
+        spec = RLMSignatureGenerator._draft_to_spec(draft)
+        assert spec.outputs[0].suggested_type == "int"
+        SignatureBuilder.build(spec)
+
+    def test_string_output_with_count_phrase_upgrades_to_list(self) -> None:
+        draft = {
+            "name": "Summarizer",
+            "instructions": "Summarize the article.",
+            "inputs": [
+                {"name": "article", "description": "The article", "type": "string"}
+            ],
+            "outputs": [
+                {
+                    "name": "takeaways",
+                    "description": "Exactly three key takeaways from the article",
+                    "type": "string",
+                }
+            ],
+        }
+        spec = RLMSignatureGenerator._draft_to_spec(draft)
+        assert spec.outputs[0].suggested_type == "list[str]"
+        SignatureBuilder.build(spec)
+
+    def test_model_field_numeric_range_enforced_at_runtime(self) -> None:
+        """Model fields with range descriptions build bounded pydantic fields."""
+        draft = {
+            "name": "Grader",
+            "instructions": "Grade the essay.",
+            "inputs": [{"name": "essay", "description": "The essay", "type": "string"}],
+            "outputs": [
+                {
+                    "name": "grade",
+                    "description": "The grade",
+                    "type": "pydantic",
+                    "pydantic_model": {
+                        "model_name": "Grade",
+                        "fields": [
+                            {
+                                "name": "score",
+                                "type": "str",
+                                "description": "Score from 0 to 10",
+                            },
+                            {
+                                "name": "takeaways",
+                                "type": "str",
+                                "description": "Exactly three key takeaways",
+                            },
+                        ],
+                    },
+                }
+            ],
+        }
+        spec = RLMSignatureGenerator._draft_to_spec(draft)
+        schema = spec.outputs[0].model_schema
+        assert schema is not None
+        assert schema.fields[0].type.value == "float"
+        assert schema.fields[0].ge == 0.0
+        assert schema.fields[0].le == 10.0
+        assert schema.fields[1].type.value == "list[str]"
+        signature = SignatureBuilder.build(spec)
+        model = signature.output_fields["grade"].annotation
+        assert model is not None and not isinstance(model, type(None))
+        assert model(score=7, takeaways=["a", "b", "c"]).score == 7
+        with pytest.raises(PydanticValidationError):
+            model(score=11, takeaways=["a"])
 
     def test_model_literals_inferred_from_instructions(self) -> None:
         """Enumerations in instructions become Literal model field types."""
