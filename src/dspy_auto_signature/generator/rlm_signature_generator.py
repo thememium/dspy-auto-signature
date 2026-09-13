@@ -8,7 +8,7 @@ import keyword
 import logging
 import re
 import threading
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any, Literal, cast
 
 import dspy
 from dspy.primitives.python_interpreter import PythonInterpreter
@@ -24,6 +24,7 @@ from dspy_auto_signature.types.signature_spec import (
     FieldSpec,
     FieldType,
     PydanticModelSchema,
+    SchemaFieldType,
     SignatureSpec,
     _list_type_from_description,
 )
@@ -657,6 +658,7 @@ class RLMSignatureGenerator(dspy.Module):
         if not instructions or not inputs or not outputs:
             raise ValueError("RLM returned an incomplete signature draft")
         instructions = cls._strip_json_output_directives(instructions, outputs)
+        cls._upgrade_model_literals(instructions, outputs)
 
         used = {field.name for field in inputs}
         for output in outputs:
@@ -719,6 +721,84 @@ class RLMSignatureGenerator(dspy.Module):
         if upgraded is None:
             return suggested_type
         return upgraded.value
+
+    _ENUMERATION_PATTERN = re.compile(r"\(\s*([^()]+?)\s*\)")
+
+    @classmethod
+    def _upgrade_model_literals(
+        cls, instructions: str, outputs: list[FieldSpec]
+    ) -> None:
+        """Promote categorical STRING fields inside pydantic models to Literal.
+
+        Enumerations in the model field's own description or near its name in
+        the instructions — for example "urgency level (low, medium, or high)" —
+        become ``literal_values`` on plain ``str`` model fields. This repairs
+        drafts where the architect wrapped outputs in a pydantic model but left
+        categorical fields untyped.
+        """
+        schemas = [
+            field.model_schema for field in outputs if field.model_schema is not None
+        ]
+        if not schemas:
+            return
+        for schema in schemas:
+            for model in schema.ordered_models():
+                for model_field in model.fields:
+                    if (
+                        model_field.type is not SchemaFieldType.STRING
+                        or model_field.literal_values
+                    ):
+                        continue
+                    values = cls._literal_values_for_field(model_field, instructions)
+                    if values:
+                        model_field.type = SchemaFieldType.LITERAL
+                        model_field.literal_values = cast("list[str | int]", values)
+
+    @classmethod
+    def _literal_values_for_field(
+        cls,
+        model_field: Any,
+        instructions: str,
+    ) -> list[str] | None:
+        """Extract literal values for one model field, or ``None``."""
+        description = model_field.description or ""
+        for match in cls._ENUMERATION_PATTERN.finditer(description):
+            values = cls._parse_enumeration(match.group(1))
+            if 2 <= len(values) <= 6:
+                return values
+        tokens = [
+            token
+            for token in re.findall(r"[a-z0-9]+", model_field.name.lower())
+            if len(token) > 2
+        ]
+        if not tokens:
+            return None
+        for match in cls._ENUMERATION_PATTERN.finditer(instructions):
+            values = cls._parse_enumeration(match.group(1))
+            if not 2 <= len(values) <= 6:
+                continue
+            prefix = instructions[max(0, match.start() - 80) : match.start()].lower()
+            if any(token in prefix for token in tokens):
+                return values
+        return None
+
+    @staticmethod
+    def _parse_enumeration(raw: str) -> list[str]:
+        """Parse one parenthesized enumeration into candidate literal values.
+
+        Accepts only separator-delimited single-word values, such as
+        ``low, medium, or high`` or ``negative/neutral/positive``; anything
+        with prose fragments yields no values.
+        """
+        parts = re.split(r",|/|\bor\b", raw)
+        if len(parts) < 2:
+            return []
+        values: list[str] = []
+        for part in parts:
+            value = part.strip().strip("'\"")
+            if value and len(value) <= 20 and " " not in value:
+                values.append(value)
+        return values
 
     @classmethod
     def _convert_fields(cls, raw_fields: Any, field_type: FieldType) -> list[FieldSpec]:

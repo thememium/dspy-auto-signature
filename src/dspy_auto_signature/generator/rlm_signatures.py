@@ -116,7 +116,11 @@ class GenerateSignature(dspy.Signature):
        output is a pydantic model, ``instructions`` must NOT mention JSON or
        output formatting at all — DSPy renders the typed field schema
        automatically, so sentences like "return the result as a JSON object"
-       are redundant. State only the task, not the wire format.
+       are redundant. State only the task, not the wire format. Inside a
+       ``pydantic_model``, categorical fields (levels, sentiments, statuses)
+       must use ``Literal`` with ``literal_values`` taken from the prompt's
+       enumerations — for example "urgency level (low, medium, or high)"
+       becomes ``literal_values`` ``[low, medium, high]``, never a plain ``str``.
     10. Only a genuinely single scalar result (one answer, score, or label) stays
        as one plain-typed output field without a wrapper model. As soon as more
        than one value is produced, use the single pydantic output of rule 9.
@@ -230,7 +234,11 @@ class GenerateSDKSignature(dspy.Signature):
        ``instructions`` must NOT mention JSON or output formatting at all —
        DSPy renders the typed field schema automatically, so sentences like
        "return the result as a JSON object" are redundant. State only the
-       task, not the wire format.
+       task, not the wire format. Inside a ``pydantic_model``, categorical
+       fields (levels, sentiments, statuses) must use ``Literal`` with
+       ``literal_values`` taken from the message's enumerations — for example
+       "urgency level (low, medium, or high)" becomes ``literal_values``
+       ``[low, medium, high]``, never a plain ``str``.
 
     ## Final submission
 
