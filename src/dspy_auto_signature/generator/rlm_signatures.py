@@ -132,7 +132,10 @@ class GenerateSignature(dspy.Signature):
         (``bullet_tags``, ``bullet_ids``, ``key_points``) or whose description
         begins with "List of ..." is a list field even when the item type is
         not named. Numeric fields described with ranges (for example "score
-        from 0 to 10") are bounded automatically.
+        from 0 to 10") are bounded automatically. NEVER propose a bare
+        ``dict`` or ``list[dict]`` — a mapping is at least ``dict[str, str]``
+        (or more specific value types), and repeated structured records are
+        better as a nested ``pydantic`` model list.
     10. Only a genuinely single scalar result (one answer, score, or label) stays
         as one plain-typed output field without a wrapper model. As soon as more
         than one value is produced, use the single pydantic output of rule 9.
@@ -253,7 +256,10 @@ class GenerateSDKSignature(dspy.Signature):
        ``[low, medium, high]``, never a plain ``str``. Choose the most specific
        type per nested field: ``int`` for counts, ``float`` for scores, ``bool``
        for yes/no values, and ``list[...]`` for repeated items — counts such as
-       "three takeaways" mean a list type, never ``str``.
+       "three takeaways" mean a list type, never ``str``. NEVER propose a bare
+       ``dict`` or ``list[dict]`` — a mapping is at least ``dict[str, str]``,
+       and repeated structured records are better as a nested ``pydantic``
+       model list.
 
     ## Final submission
 

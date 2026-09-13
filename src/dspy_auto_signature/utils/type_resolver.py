@@ -32,15 +32,15 @@ class TypeResolver:
         "bool": bool,
         "yes/no": bool,
         "yes or no": bool,
-        # Collections
-        "list": list,
-        "array": list,
-        "sequence": list,
+        # Collections — never bare: worst case is str item / str values.
+        "list": list[str],
+        "array": list[str],
+        "sequence": list[str],
         "tuple": tuple,
-        "dict": dict,
-        "dictionary": dict,
-        "map": dict,
-        "object": dict,
+        "dict": dict[str, str],
+        "dictionary": dict[str, str],
+        "map": dict[str, str],
+        "object": dict[str, str],
         # Special
         "any": Any,
     }
@@ -162,7 +162,12 @@ class TypeResolver:
             container_name = container_match.group(1)
             inner_desc = container_match.group(2).strip()
             inner_type = cls.resolve(inner_desc)
-            container_cls = cls._ALIASES.get(container_name, list)
+            container_cls = {
+                "list": list,
+                "array": list,
+                "sequence": list,
+                "tuple": tuple,
+            }[container_name]
             return container_cls[inner_type]  # type: ignore[return-value]
 
         # Handle dict generics: "dict of X to Y", "mapping of X to Y"

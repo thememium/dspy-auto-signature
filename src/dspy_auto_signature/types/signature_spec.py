@@ -60,8 +60,8 @@ _SCHEMA_ANNOTATIONS: dict[SchemaFieldType, Any] = {
     SchemaFieldType.DICT_STR_INTEGER: dict[str, int],
     SchemaFieldType.DICT_STR_FLOAT: dict[str, float],
     SchemaFieldType.DICT_STR_ANY: dict[str, Any],
-    SchemaFieldType.LIST_DICT: list[dict],
-    SchemaFieldType.DICT_ANY: dict,
+    SchemaFieldType.LIST_DICT: list[dict[str, str]],
+    SchemaFieldType.DICT_ANY: dict[str, str],
 }
 
 _SCHEMA_ALIASES: dict[str, SchemaFieldType] = {
@@ -361,11 +361,13 @@ class PydanticFieldDef(BaseModel):
 
     @model_validator(mode="after")
     def _repair_type(self) -> PydanticFieldDef:
-        """Repair degenerate Literal/Pydantic proposals from drafts."""
+        """Repair degenerate or untyped proposals from drafts."""
         if self.type is SchemaFieldType.LITERAL and not self.literal_values:
             self.type = SchemaFieldType.STRING
         if self.type is SchemaFieldType.PYDANTIC_MODEL and self.nested_model is None:
-            self.type = SchemaFieldType.STRING
+            self.type = SchemaFieldType.DICT_STR_STRING
+        if self.type is SchemaFieldType.DICT_ANY:
+            self.type = SchemaFieldType.DICT_STR_STRING
         if self.type is SchemaFieldType.STRING and self.literal_values:
             self.type = SchemaFieldType.LITERAL
         if self.type is SchemaFieldType.STRING:
@@ -402,6 +404,8 @@ class PydanticFieldDef(BaseModel):
             base = f"Literal[{', '.join(repr(v) for v in self.literal_values or ())}]"
         elif self.type is SchemaFieldType.PYDANTIC_MODEL and self.nested_model:
             base = self.nested_model.model_name
+        elif self.type is SchemaFieldType.LIST_DICT:
+            base = "list[dict[str, str]]"
         else:
             base = self.type.value
         return base if self.required else f"{base} | None"
