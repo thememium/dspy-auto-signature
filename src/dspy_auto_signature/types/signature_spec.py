@@ -123,7 +123,11 @@ _LIST_DESCRIPTION_PATTERN = re.compile(r"^\s*list of\s+(.*)", re.IGNORECASE)
 
 
 def _list_type_from_description(description: str) -> SchemaFieldType | None:
-    """Infer a list type when a STRING field's description says "list of X"."""
+    """Infer a list type when a STRING field's description says "list of X".
+
+    A recognized item type ("list of integers") picks the matching list type;
+    any other "list of ..." prefix still means a list of strings.
+    """
     match = _LIST_DESCRIPTION_PATTERN.match(description)
     if match is None:
         return None
@@ -131,6 +135,20 @@ def _list_type_from_description(description: str) -> SchemaFieldType | None:
         item_type = _LIST_ITEM_TYPES.get(token.strip(".,;:()").lower())
         if item_type is not None:
             return item_type
+    return SchemaFieldType.LIST_STRING
+
+
+_LIST_NAME_SUFFIX_PATTERN = re.compile(
+    r"(?:^|_)(ids|tags|keys|names|labels|items|urls|paths|refs|links|entries|"
+    r"values|points)$",
+    re.IGNORECASE,
+)
+
+
+def _list_name_type(name: str) -> SchemaFieldType | None:
+    """Infer ``list[str]`` from collection-style field names like ``bullet_tags``."""
+    if _LIST_NAME_SUFFIX_PATTERN.search(str(name)):
+        return SchemaFieldType.LIST_STRING
     return None
 
 
@@ -350,15 +368,20 @@ class PydanticFieldDef(BaseModel):
             self.type = SchemaFieldType.STRING
         if self.type is SchemaFieldType.STRING and self.literal_values:
             self.type = SchemaFieldType.LITERAL
-        if self.type is SchemaFieldType.STRING and self.description:
+        if self.type is SchemaFieldType.STRING:
             upgraded: SchemaFieldType | tuple[SchemaFieldType, float, float] | None = (
-                _list_type_from_description(self.description)
-                or _count_list_type_from_description(self.description)
+                _list_name_type(self.name)
             )
+            if self.description:
+                upgraded = upgraded or (
+                    _list_type_from_description(self.description)
+                    or _count_list_type_from_description(self.description)
+                )
             if upgraded is None:
-                numeric = _numeric_constraint_from_description(self.description)
-                if numeric is not None:
-                    self.type, self.ge, self.le = numeric
+                if self.description:
+                    numeric = _numeric_constraint_from_description(self.description)
+                    if numeric is not None:
+                        self.type, self.ge, self.le = numeric
             else:
                 self.type = upgraded
         return self
