@@ -201,11 +201,13 @@ class PydanticFieldDef(BaseModel):
 
     @model_validator(mode="after")
     def _repair_type(self) -> PydanticFieldDef:
-        """Downgrade degenerate Literal/Pydantic proposals to plain strings."""
+        """Repair degenerate Literal/Pydantic proposals from drafts."""
         if self.type is SchemaFieldType.LITERAL and not self.literal_values:
             self.type = SchemaFieldType.STRING
         if self.type is SchemaFieldType.PYDANTIC_MODEL and self.nested_model is None:
             self.type = SchemaFieldType.STRING
+        if self.type is SchemaFieldType.STRING and self.literal_values:
+            self.type = SchemaFieldType.LITERAL
         if self.type is SchemaFieldType.STRING and self.description:
             upgraded = _list_type_from_description(self.description)
             if upgraded is not None:
