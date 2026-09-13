@@ -42,6 +42,7 @@ deterministically; anything else gets a single LLM call (`dspy.ChainOfThought`).
 No sandbox, no Deno, no iterative loop — one call and you're done.
 
 - **Automatic signature design** — Infers instructions, inputs, outputs, field descriptions, and types
+- **Strongly typed outputs** — When the LLM designs the signature (`mode="cot"` or `mode="rlm"`), structured outputs become real Pydantic `BaseModel` types with nested models, `Literal` enums, and validation
 - **Dataset-aware generation** — Profiles DataFrame columns, distributions, and representative rows
 - **Ready to use** — Returns signatures compatible with `dspy.Predict`, `dspy.ChainOfThought`, and other DSPy modules
 - **Exportable** — Renders generated signatures as Python source with `to_source()`
@@ -232,6 +233,44 @@ Generates a `dspy.Signature` subclass from prompt material or tabular data.
 
 `auto` is right for almost everything. Pass `mode="cot"` or `mode="rlm"` when
 you want the LLM to design even structured inputs.
+
+### Typed outputs with Pydantic models
+
+Whenever ChainOfThought or the RLM architect designs a signature, structured
+outputs are strongly typed. Instead of a plain `str` field described as "JSON
+containing ...", the architect proposes a full Pydantic model schema, and the
+generated signature uses a real `BaseModel` class as the output field type:
+
+```python
+import dspy
+import dspy_auto_signature as das
+
+das.configure(lm=dspy.LM("openai/gpt-4o-mini"))
+
+Signature = das.generate(
+    "Extract the customer's contact information from the support ticket: {ticket}",
+    mode="cot",
+)
+contact_field = Signature.output_fields["contact"].annotation
+# A generated pydantic model, e.g. ContactRecord(full_name=..., age=..., ...)
+print(contact_field.model_json_schema())
+```
+
+Behavior:
+
+- Multi-field and nested outputs become `pydantic` model schemas with concrete
+  field types (`str`, `int`, `float`, `bool`, `list[str]`, `dict[str, str]`,
+  `Literal`, and nested `pydantic` models). DSPy validates model responses
+  against the generated model at runtime.
+- Enumerated outputs become `typing.Literal` types.
+- Simple scalar outputs stay plain (`str`, `int`, ...).
+- `to_source()` renders the Pydantic model classes above the signature class,
+  so exported source is self-contained and importable.
+- Deterministic paths (`mode="fast"` and structural `auto` inputs) keep their
+  existing inferred types.
+
+The generated `PydanticModelSchema` type is exported for programmatic use with
+`SignatureSpec` and `FieldSpec.model_schema`.
 
 ### `configure(lm=None, dataset_lm=None, sub_lm=None)`
 
