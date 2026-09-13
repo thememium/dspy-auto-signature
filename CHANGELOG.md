@@ -1,5 +1,22 @@
 # Changelog
 
+## v0.1.7 (2026-09-13)
+
+[Compare changes](https://github.com/thememium/dspy-auto-signature/compare/v0.1.6...v0.1.7)
+
+### 💅 Refactors
+
+- **dspy_auto_signature**: add dspy 3.3+ compatibility for RLM interpreter handling ([8e7ba7c](https://github.com/thememium/dspy-auto-signature/commit/8e7ba7cc17657a55f556bdabd6822cb58ee4463a))
+
+### ✅ Tests
+
+- add warm interpreter tests ([141aadb](https://github.com/thememium/dspy-auto-signature/commit/141aadb56b8ae8a173a1b0e7a5ea8f0eddf70d13))
+- **generator**: add iteration cap test for RLMs ([9891a15](https://github.com/thememium/dspy-auto-signature/commit/9891a1540557e75a53808dc28a899a4b46361df1))
+
+### Contributors
+
+- Edward Boswell <thememium@gmail.com>
+
 ## v0.1.6 (2026-09-12)
 
 [Compare changes](https://github.com/thememium/dspy-auto-signature/compare/v0.1.5...v0.1.6)
