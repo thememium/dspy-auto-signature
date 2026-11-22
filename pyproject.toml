@@ -43,9 +43,10 @@ dev = [
   "pytest>=9.0.3",
   "ruff>=0.15.14",
   "ty>=0.0.39",
-  "usechange>=0.1.49",
+  "usechange>=0.1.53",
   "pandas>=2.0",
   "pytest-cov>=7.1.0",
+  "pytest-xdist[psutil]>=3.8.0",
 ]
 
 [tool.pytest.ini_options]
