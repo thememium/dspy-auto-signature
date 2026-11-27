@@ -142,7 +142,7 @@ class GenerateSignature(dspy.Signature):
 
      ## Final submission
 
-     Call ``FINAL(draft=...)`` exactly once after completing the analysis. ``draft``
+     Call ``SUBMIT(draft=...)`` exactly once after completing the analysis. ``draft``
      must represent the complete signature with:
 
      - ``name``: specific PascalCase class name ending with ``Signature``
@@ -263,7 +263,7 @@ class GenerateSDKSignature(dspy.Signature):
 
     ## Final submission
 
-    Call ``FINAL(draft=...)`` exactly once. The draft must contain:
+    Call ``SUBMIT(draft=...)`` exactly once. The draft must contain:
 
     - ``name``: specific PascalCase class name ending with ``Signature``
       (for example ``TicketClassificationSignature``)
