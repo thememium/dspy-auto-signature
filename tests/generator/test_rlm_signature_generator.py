@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 import json
 from types import SimpleNamespace
 from typing import Any, Literal, get_args, get_origin
@@ -1042,12 +1043,16 @@ class TestWarmInterpreter:
         monkeypatch.setattr(Config, "_lm", dspy.LM("openai/gpt-4o"))
         first = RLMSignatureGenerator()
         second = RLMSignatureGenerator()
-        if first._pass_warm_interpreter:
-            # dspy >=3.3 resolves the interpreter per call from the thread-local.
-            assert not hasattr(first.rlm, "_interpreter")
-            assert gen_mod._thread_interpreter() is gen_mod._thread_interpreter()
-        else:
+        if "interpreter" in inspect.signature(dspy.RLM.__init__).parameters:
+            # dspy <3.3 takes a caller-owned interpreter at construction, so
+            # every generator shares this thread's warm interpreter.
             assert first.rlm._interpreter is second.rlm._interpreter
+        else:
+            # Newer dspy resolves the interpreter per forward call, so no RLM
+            # owns one and the thread-local stays the single warm instance.
+            assert not hasattr(first.rlm, "_interpreter")
+            assert not hasattr(second.rlm, "_interpreter")
+            assert gen_mod._thread_interpreter() is gen_mod._thread_interpreter()
 
     def test_close_interpreter_for_thread_shuts_down(
         self, monkeypatch: pytest.MonkeyPatch
@@ -1093,11 +1098,13 @@ class TestWarmInterpreter:
             thread.join()
 
         assert results["a"] is not results["b"]
-        if results["a"]._pass_warm_interpreter:
-            # dspy >=3.3 resolves interpreters from per-thread state at call time.
-            assert not hasattr(results["a"].rlm, "_interpreter")
-        else:
+        if "interpreter" in inspect.signature(dspy.RLM.__init__).parameters:
             assert results["a"].rlm._interpreter is not results["b"].rlm._interpreter
+        else:
+            # Newer dspy owns the interpreter per forward call; generators
+            # must not hold one across threads.
+            assert not hasattr(results["a"].rlm, "_interpreter")
+            assert not hasattr(results["b"].rlm, "_interpreter")
         assert das._get_generator(shared_lm) is das._get_generator(shared_lm)
 
     def test_interpreter_proxy_delegates_and_cleans_up(
@@ -1164,9 +1171,8 @@ class TestWarmInterpreter:
                 self.interpreter: Any = None
                 self.kwargs: dict[str, Any] = {}
 
-            def __call__(self, *args: Any, **kwargs: Any) -> None:
-                if args:
-                    self.interpreter = args[0]
+            def __call__(self, **kwargs: Any) -> None:
+                self.interpreter = kwargs.pop("interpreter", None)
                 self.kwargs = kwargs
 
         monkeypatch.setattr(Config, "_lm", dspy.LM("openai/gpt-4o"))
@@ -1186,6 +1192,27 @@ class TestWarmInterpreter:
         assert rlm_stub.kwargs == context
         assert cot_stub.interpreter is None
         assert cot_stub.kwargs == context
+
+    def test_per_call_interpreter_detected_from_forward_signature(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import dspy_auto_signature.generator.rlm_signature_generator as gen_mod
+
+        class _LegacyRLM:
+            def forward(self, interpreter: Any, **input_args: Any) -> None: ...
+
+        class _FactoryRLM:
+            def forward(
+                self, *, interpreter_factory: Any = None, **input_args: Any
+            ) -> None: ...
+
+        monkeypatch.setattr(gen_mod.dspy, "RLM", _LegacyRLM)
+        assert gen_mod._rlm_takes_per_call_interpreter() is True
+
+        # dspy 3.5+ takes a keyword-only ``interpreter_factory`` and rejects
+        # caller-owned interpreter instances, so no per-call override is sent.
+        monkeypatch.setattr(gen_mod.dspy, "RLM", _FactoryRLM)
+        assert gen_mod._rlm_takes_per_call_interpreter() is False
 
 
 class TestStructuralFastPath:
