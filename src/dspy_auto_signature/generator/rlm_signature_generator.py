@@ -221,9 +221,9 @@ def _rlm_init_kwargs(max_iterations: int) -> dict[str, Any]:
     The iteration cap was renamed across DSPy versions (``max_iterations``
     before 3.3, ``max_iters`` from 3.3), so the accepted name is detected from
     the installed signature. DSPy <3.3 also takes a caller-owned
-    ``interpreter`` at construction; from 3.3 interpreter ownership moved to a
-    per-forward ``interpreter_factory`` and the warm interpreter is passed to
-    ``forward`` instead (see ``RLMSignatureGenerator._call_architect``).
+    ``interpreter`` at construction, so the warm thread interpreter is passed
+    here; newer versions own interpreter lifecycle and create a fresh
+    interpreter per ``forward`` call (see ``RLMSignatureGenerator._call_architect``).
     """
     params = inspect.signature(dspy.RLM.__init__).parameters
     iter_kw = "max_iters" if "max_iters" in params else "max_iterations"
@@ -233,9 +233,10 @@ def _rlm_init_kwargs(max_iterations: int) -> dict[str, Any]:
     return kwargs
 
 
-def _rlm_takes_positional_interpreter() -> bool:
-    """Whether ``dspy.RLM.forward`` accepts a caller-owned interpreter per call."""
-    return "interpreter_factory" in inspect.signature(dspy.RLM.__init__).parameters
+def _rlm_takes_per_call_interpreter() -> bool:
+    """Whether ``dspy.RLM.forward`` accepts a caller-owned interpreter keyword per call."""
+    forward = getattr(dspy.RLM, "forward")
+    return "interpreter" in inspect.signature(forward).parameters
 
 
 class RLMSignatureGenerator(dspy.Module):
@@ -258,16 +259,19 @@ class RLMSignatureGenerator(dspy.Module):
         # contracts as the RLM paths.
         self.cot = dspy.ChainOfThought(GenerateSignature)
         self.cot_sdk = dspy.ChainOfThought(GenerateSDKSignature)
-        # dspy >=3.3 no longer takes an interpreter at RLM construction; the
-        # warm thread interpreter is passed positionally per forward call.
-        self._pass_warm_interpreter = _rlm_takes_positional_interpreter()
+        # Some dspy builds no longer take an interpreter at RLM construction
+        # and instead accept an ``interpreter`` keyword on ``forward``. Newer
+        # builds (3.5+) own lifecycle through a keyword-only
+        # ``interpreter_factory`` that must return a fresh interpreter per
+        # call, so they receive no override and keep their own factory.
+        self._pass_warm_interpreter = _rlm_takes_per_call_interpreter()
 
     def _call_architect(self, module: Any, context: dict[str, Any]) -> Any:
-        """Call an architect module, handing it the warm interpreter when dspy expects one per call."""
+        """Call an architect module, handing it the warm interpreter when `forward` takes one."""
         if self._pass_warm_interpreter and (
             module is self.rlm or module is self.sdk_rlm
         ):
-            return module(_thread_interpreter(), **context)
+            return module(interpreter=_thread_interpreter(), **context)
         return module(**context)
 
     def forward(
